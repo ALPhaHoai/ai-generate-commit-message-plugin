@@ -1,0 +1,18 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <id>com.example.gitcommitgenerator</id>
+    <name>AI Generate Commit Message</name>
+    <version>1.0</version>
+    <vendor email="bruce@example.com">Bruce</vendor>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <actions>
+        <!-- This action adds a button inside Git commit message panel -->
+        <action id="com.example.autocommit.Action"
+                class="org.jetbrains.GenerateCommitMessageAction"
+                text="AI Generate Commit Message">
+            <add-to-group group-id="Vcs.MessageActionGroup" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
