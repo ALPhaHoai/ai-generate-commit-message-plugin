@@ -10,15 +10,12 @@ import com.intellij.openapi.vcs.CommitMessageI
 import com.intellij.openapi.vcs.VcsDataKeys
 import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vcs.ui.Refreshable
-import com.jetbrains.rd.util.first
-import com.jetbrains.rd.util.firstOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.util.UUID
 
 private val logger = Logger.getInstance("GitPlugin")
 private val API_TOKEN = ""
@@ -72,29 +69,20 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         project ?: return null
         val changeListManager = ChangeListManager.getInstance(project)
 
-        val file = changeListManager.allChanges.firstOrNull() ?: return null
-        val beforeContent = file.beforeRevision?.content  // Old file content
-        val afterContent = file.afterRevision?.content  // New file content
-        if (beforeContent != null && afterContent != null) {
-            return getDiffMessage(beforeContent, afterContent)
+        val commitMessages = arrayListOf<String>()
+        changeListManager.allChanges.forEachIndexed { index, file ->
+            val beforeContent = file.beforeRevision?.content  // Old file content
+            val afterContent = file.afterRevision?.content  // New file content
+
+            if (beforeContent != null && afterContent != null) {
+                val commitMessage = getDiffMessage(beforeContent, afterContent)
+                if (commitMessage != null && commitMessage.isNotEmpty()) {
+                    commitMessages.add(commitMessage)
+                }
+            }
         }
 
-
-//        changeListManager.allChanges.forEachIndexed { index, file ->
-//            val beforeContent = file.beforeRevision?.content  // Old file content
-//            val afterContent = file.afterRevision?.content  // New file content
-//
-//            if (beforeContent != null && afterContent != null) {
-//                println("File $index: BEFORE CHANGE:\n$beforeContent")
-//                println("File $index: AFTER CHANGE:\n$afterContent")
-//                println("------------------------------")
-//            }
-//        }
-
-        return null
-
-//        return changeListManager.allChanges
-//            .mapNotNull { it.virtualFile?.path }
+        return commitMessages.joinToString("\n")
     }
 
     private fun getDiffMessage(beforeContent: String, afterContent: String): String? {
@@ -102,7 +90,7 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             "generate a short simple git commit message based on my below code changes:  \n  \n" +
                     "\n\n\n\n\n\nbefore changes:  \n${beforeContent.trim()}" +
                     "\n\n\n\nafter changes:  \n${afterContent.trim()}"
-        )
+        )?.trim()
     }
 
     fun completions(content: String): String? {
