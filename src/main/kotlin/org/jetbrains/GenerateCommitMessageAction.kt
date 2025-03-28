@@ -75,9 +75,45 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             val afterContent = file.afterRevision?.content  // New file content
 
             if (beforeContent != null && afterContent != null) {
-                val commitMessage = getDiffMessage(beforeContent, afterContent)
+                val canonicalPath = file.virtualFile?.canonicalPath
+                val commitMessage = getDiffMessage(canonicalPath, beforeContent, afterContent)
                 if (commitMessage != null && commitMessage.isNotEmpty()) {
                     commitMessages.add(commitMessage)
+                } else {
+                    //file too big, trim file content
+
+                    val beforeContentLines = splitIntoChunks(beforeContent, 100).toMutableList()
+                    val afterContentLines = splitIntoChunks(afterContent, 100).toMutableList()
+
+                    while (beforeContentLines.first().isBlank()) {
+                        beforeContentLines.removeFirst()
+                    }
+                    while (afterContentLines.first().isBlank()) {
+                        afterContentLines.removeFirst()
+                    }
+                    while (beforeContentLines.last().isBlank()) {
+                        beforeContentLines.removeLast()
+                    }
+                    while (afterContentLines.last().isBlank()) {
+                        afterContentLines.removeLast()
+                    }
+
+                    while (beforeContentLines.first().trim().equals(afterContentLines.first().trim())) {
+                        beforeContentLines.removeFirst()
+                        afterContentLines.removeFirst()
+                    }
+
+                    while (beforeContentLines.last().trim().equals(afterContentLines.last().trim())) {
+                        beforeContentLines.removeLast()
+                        afterContentLines.removeLast()
+                    }
+
+                    val newBeforeContent = beforeContentLines.joinToString("\n")
+                    val newAfterContent = afterContentLines.joinToString("\n")
+                    val newCommitMessage = getDiffMessage(canonicalPath, newBeforeContent, newAfterContent)
+                    if (newCommitMessage != null && newCommitMessage.isNotEmpty()) {
+                        commitMessages.add(newCommitMessage)
+                    }
                 }
             }
         }
@@ -85,12 +121,14 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         return commitMessages.joinToString("\n")
     }
 
-    private fun getDiffMessage(beforeContent: String, afterContent: String): String? {
-        return completions(
-            "generate a short simple git commit message based on my below code changes:  \n  \n" +
-                    "\n\n\n\n\n\nbefore changes:  \n${beforeContent.trim()}" +
-                    "\n\n\n\nafter changes:  \n${afterContent.trim()}"
-        )?.trim()
+    private fun getDiffMessage(path: String?, beforeContent: String, afterContent: String): String? {
+        val message = buildString {
+            appendLine("generate a short simple git commit message based on my below code changes:")
+            path?.trim()?.let { appendLine("my file located at:\n$it") }
+            appendLine("my code before changes:\n${beforeContent.trim()}")
+            appendLine("my code after changes:\n${afterContent.trim()}")
+        }
+        return completions(message.trim())
     }
 
     fun completions(content: String): String? {
@@ -127,6 +165,10 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         val response = client.newCall(request).execute()
         val jsonResponse = response.body.string()
         val chatResponse = gson.fromJson(jsonResponse, ChatResponse::class.java)
-        return chatResponse.choices.firstOrNull()?.message?.content
+        return chatResponse?.choices?.firstOrNull()?.message?.content
     }
+}
+
+fun splitIntoChunks(text: String, chunkSize: Int = 50): List<String> {
+    return text.lines().chunked(chunkSize).map { it.joinToString("\n") }
 }
