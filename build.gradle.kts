@@ -194,21 +194,19 @@ val outputDir = File(generatedDir, packagePath)
 
 val outputFile = File(outputDir, "BuildConfig.kt")
 
-if (!outputFile.exists()) {
-    outputDir.mkdirs()
-    val content = buildString {
-        appendLine("package $packageName")
-        appendLine()
-        appendLine("object BuildConfig {")
-        envVars.forEach { (key, value) ->
-            val constantName = key.uppercase().replace(Regex("[^A-Z0-9_]"), "_")
-            appendLine("    const val $constantName: String = \"$value\"")
-        }
-        appendLine("}")
+outputDir.mkdirs()
+val content = buildString {
+    appendLine("package $packageName")
+    appendLine()
+    appendLine("object BuildConfig {")
+    envVars.forEach { (key, value) ->
+        val constantName = key.uppercase().replace(Regex("[^A-Z0-9_]"), "_")
+        appendLine("    const val $constantName: String = \"$value\"")
     }
-    outputFile.writeText(content)
-    println("✔ Generated ${outputFile.name} at ${outputFile.absolutePath}")
+    appendLine("}")
 }
+outputFile.writeText(content)
+println("✔ Generated ${outputFile.name} at ${outputFile.absolutePath}")
 
 // Add to sourceSets so IDE indexes it during Gradle sync
 sourceSets["main"].kotlin.srcDir(generatedDir)
