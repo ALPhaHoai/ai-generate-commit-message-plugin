@@ -18,8 +18,8 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 private val logger = Logger.getInstance("GitPlugin")
-private val API_TOKEN = ""
-private val API_URL = "https://chatgpt.com/"
+private val API_TOKEN = BuildConfig.API_TOKEN
+private val API_URL = BuildConfig.API_URL
 
 class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
     override fun actionPerformed(event: AnActionEvent) {

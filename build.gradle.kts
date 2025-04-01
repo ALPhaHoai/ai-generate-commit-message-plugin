@@ -1,6 +1,7 @@
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import java.io.File
 
 plugins {
     id("java") // Java support
@@ -9,6 +10,8 @@ plugins {
     alias(libs.plugins.changelog) // Gradle Changelog Plugin
     alias(libs.plugins.qodana) // Gradle Qodana Plugin
     alias(libs.plugins.kover) // Gradle Kover Plugin
+
+    application
 }
 
 group = providers.gradleProperty("pluginGroup").get()
@@ -101,7 +104,8 @@ intellijPlatform {
         // The pluginVersion is based on the SemVer (https://semver.org) and supports pre-release labels, like 2.1.7-alpha.3
         // Specify pre-release label to publish the plugin in a custom Release Channel automatically. Read more:
         // https://plugins.jetbrains.com/docs/intellij/deployment.html#specifying-a-release-channel
-        channels = providers.gradleProperty("pluginVersion").map { listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "default" }) }
+        channels = providers.gradleProperty("pluginVersion")
+            .map { listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "default" }) }
     }
 
     pluginVerification {
@@ -158,3 +162,53 @@ intellijPlatformTesting {
         }
     }
 }
+
+application {
+    mainClass.set("org.jetbrains.MainKt")
+}
+
+// Configuration-time generation
+val envVars: Map<String, String> = file(".env")
+    .takeIf { it.exists() }
+    ?.readLines()
+    ?.filter { it.isNotBlank() && !it.trimStart().startsWith("#") }
+    ?.mapNotNull {
+        val (key, value) = it.split("=", limit = 2)
+        if (key.isBlank() || value.isBlank()) null else key.trim() to value.trim()
+    }
+    ?.toMap()
+    ?: emptyMap()
+
+val generatedDir = layout.buildDirectory.dir("generated/env").get().asFile
+
+val mainFile = file("src/main/kotlin/org/jetbrains/GenerateCommitMessageAction.kt")
+val packageName = mainFile
+    .takeIf { it.exists() }
+    ?.readLines()
+    ?.firstOrNull { it.trim().startsWith("package ") }
+    ?.removePrefix("package ")
+    ?.trim() ?: ""
+
+val packagePath = packageName.replace(".", "/")
+val outputDir = File(generatedDir, packagePath)
+
+val outputFile = File(outputDir, "BuildConfig.kt")
+
+if (!outputFile.exists()) {
+    outputDir.mkdirs()
+    val content = buildString {
+        appendLine("package $packageName")
+        appendLine()
+        appendLine("object BuildConfig {")
+        envVars.forEach { (key, value) ->
+            val constantName = key.uppercase().replace(Regex("[^A-Z0-9_]"), "_")
+            appendLine("    const val $constantName: String = \"$value\"")
+        }
+        appendLine("}")
+    }
+    outputFile.writeText(content)
+    println("✔ Generated ${outputFile.name} at ${outputFile.absolutePath}")
+}
+
+// Add to sourceSets so IDE indexes it during Gradle sync
+sourceSets["main"].kotlin.srcDir(generatedDir)
