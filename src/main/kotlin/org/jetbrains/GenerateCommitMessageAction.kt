@@ -30,7 +30,19 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             showErrorDialog(project, "No commit message document found.")
             return
         }
-        val msg = getChangedMessage(project)
+
+        var msg: String? = null
+        for (i in 1..5) {
+            msg = try {
+                getChangedMessage(project)
+            } catch (e: Exception) {
+                null
+            }
+            if (msg != null) {
+                break
+            }
+        }
+
         if (msg == null) {
             showErrorDialog(project, "No changes  found.")
             return
