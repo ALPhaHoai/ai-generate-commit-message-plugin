@@ -32,21 +32,16 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         }
 
         var msg: String? = null
-        for (i in 1..5) {
-            msg = try {
-                getChangedMessage(project)
-            } catch (e: Exception) {
-                null
-            }
-            if (msg != null) {
-                break
-            }
+
+        repeat(5) {
+            msg = runCatching { getChangedMessage(project) }.getOrNull()
+            if (msg != null) return@repeat
         }
 
         if (msg == null) {
-            showErrorDialog(project, "No changes  found.")
-            return
+            showErrorDialog(project, "No changes found.")
         }
+
 
         commitPanel.setCommitMessage(msg)
     }
