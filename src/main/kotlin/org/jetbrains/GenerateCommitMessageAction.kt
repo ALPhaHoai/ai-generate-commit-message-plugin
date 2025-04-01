@@ -70,7 +70,11 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         val changeListManager = ChangeListManager.getInstance(project)
 
         val commitMessages = arrayListOf<String>()
-        changeListManager.allChanges.forEachIndexed { index, file ->
+        changeListManager.allChanges.filter { file ->
+            file.virtualFile?.name?.let { name ->
+                listOf(".css", ".map", ".json").none { name.endsWith(it) }
+            } ?: false
+        }.forEachIndexed { index, file ->
             val beforeContent = file.beforeRevision?.content  // Old file content
             val afterContent = file.afterRevision?.content  // New file content
 
