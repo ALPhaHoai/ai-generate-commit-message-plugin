@@ -20,6 +20,7 @@ import java.time.format.DateTimeFormatter
 private val logger = Logger.getInstance("GitPlugin")
 private val API_TOKEN = BuildConfig.API_TOKEN
 private val API_URL = BuildConfig.API_URL
+private val REMOTE_API_URL = BuildConfig.REMOTE_API_URL
 
 class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
     override fun actionPerformed(event: AnActionEvent) {
@@ -139,7 +140,7 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             appendLine("my code before changes:\n${beforeContent.trim()}")
             appendLine("my code after changes:\n${afterContent.trim()}")
         }
-        return completions(message.trim())
+        return completions_remote(message.trim())
     }
 
     fun completions(content: String): String? {
@@ -177,6 +178,41 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         val jsonResponse = response.body.string()
         val chatResponse = gson.fromJson(jsonResponse, ChatResponse::class.java)
         return chatResponse?.choices?.firstOrNull()?.message?.content
+    }
+
+    fun completions_remote(content: String): String? {
+        val client = OkHttpClient()
+        val gson = Gson()
+        val mediaType = "application/json".toMediaType()
+
+        data class RequestBody(
+            val content: String,
+            val api_url: String,
+            val api_token: String
+        )
+        data class ApiResponse(
+            val response: String?,
+            val error: String?
+        )
+
+        val requestBody = RequestBody(
+            content = content,
+            api_url = API_URL,
+            api_token = API_TOKEN
+        )
+        val jsonString = gson.toJson(requestBody)
+        try {
+            val request = Request.Builder()
+                .url(REMOTE_API_URL)
+                .post(jsonString.toRequestBody(mediaType))
+                .addHeader("Content-Type", "application/json")
+                .build()
+            val response = client.newCall(request).execute()
+            val apiResponse: ApiResponse? = gson.fromJson(response.body.string(), ApiResponse::class.java)
+            return apiResponse?.response
+        } catch (e: Exception) {
+            return null
+        }
     }
 }
 
