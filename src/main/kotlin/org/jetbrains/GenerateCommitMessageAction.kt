@@ -15,6 +15,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
 
 private val logger = Logger.getInstance("GitPlugin")
 private val API_TOKEN = BuildConfig.API_TOKEN
@@ -212,7 +213,11 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
     }
 
     fun completions_remote(content: String): String? {
-        val client = OkHttpClient()
+        val client = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.MINUTES)
+            .readTimeout(10, TimeUnit.MINUTES)
+            .writeTimeout(10, TimeUnit.MINUTES)
+            .build()
         val gson = Gson()
         val mediaType = "application/json".toMediaType()
 
