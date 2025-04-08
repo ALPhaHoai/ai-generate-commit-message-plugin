@@ -3,7 +3,11 @@ package org.jetbrains
 import com.google.gson.Gson
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vcs.CommitMessageI
@@ -16,6 +20,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
+
 
 private val logger = Logger.getInstance("GitPlugin")
 private val API_TOKEN = BuildConfig.API_TOKEN
@@ -33,18 +38,26 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         }
 
         commitPanel.setCommitMessage("")
-        var msg: String? = null
-        repeat(5) {
-            msg = runCatching { getChangedMessage(project) }.getOrNull()
-            if (msg?.isNotBlank() == true) return@repeat
-        }
 
-        if (msg.isNullOrBlank()) {
-            showErrorDialog(project, "No changes found.")
-        }
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Generating Commit Message", false) {
+            override fun run(indicator: ProgressIndicator) {
+                indicator.isIndeterminate = true
+                indicator.text = "Analyzing code changes and generating message..."
+                var msg: String? = null
+                repeat(5) {
+                    msg = runCatching { getChangedMessage(project, indicator) }.getOrNull()
+                    if (msg?.isNotBlank() == true) return@repeat
+                }
 
+                if (msg.isNullOrBlank()) {
+                    showErrorDialog(project, "No changes found.")
+                }
 
-        commitPanel.setCommitMessage(msg)
+                ApplicationManager.getApplication().invokeLater {
+                    commitPanel.setCommitMessage(msg)
+                }
+            }
+        })
     }
 
     private fun generateCommitMessage(): String {
@@ -72,38 +85,44 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         return VcsDataKeys.COMMIT_MESSAGE_CONTROL.getData(event.dataContext)
     }
 
-    private fun getChangedMessage(project: Project): String? {
+    private fun getChangedMessage(project: Project, indicator: ProgressIndicator): String? {
         val selectedChanges = getIncludedCheckedChangesFromCommit(project) ?: return null
 
-        return selectedChanges
-            .asSequence()
+        val resultMessages = mutableListOf<String>()
+
+        val changes = selectedChanges
             .filterNot { it.shouldIgnoreFile() }
-            .mapNotNull { file ->
-                val before = file.beforeRevision?.content
-                val after = file.afterRevision?.content
-                val path = file.virtualFile?.canonicalPath
 
-                if (before == null || after == null || path == null) return@mapNotNull null
+        indicator.text = "Found ${changes.size} file(s) to process..."
 
-                val rawMessage = getDiffMessageRepeat(path, before, after)
-                if (!rawMessage.isNullOrBlank()) {
-                    return@mapNotNull "$path:\n$rawMessage"
-                }
+        for ((index, file) in changes.withIndex()) {
+            val path = file.virtualFile?.canonicalPath
+            indicator.text = "Processing file ${index + 1} of ${changes.size}: ${file.virtualFile?.name ?: "Unknown"}"
 
-                val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
+            val before = file.beforeRevision?.content
+            val after = file.afterRevision?.content
 
-                getDiffMessageRepeat(path, trimmedBefore, trimmedAfter)
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { "$path:\n$it" }
+            if (before == null || after == null || path == null) {
+                continue
             }
-            .toList()
-            .takeIf { it.isNotEmpty() }
-            ?.joinToString("\n\n")
+
+            var rawMessage = getDiffMessageRepeat(path, before, after)
+            if (rawMessage.isNullOrBlank()) {
+                val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
+                rawMessage = getDiffMessageRepeat(path, trimmedBefore, trimmedAfter)
+            }
+
+            if (!rawMessage.isNullOrBlank()) {
+                resultMessages.add("$path:\n$rawMessage")
+            }
+        }
+
+        return if (resultMessages.isNotEmpty()) resultMessages.joinToString("\n\n") else null
     }
 
     private fun trimDiffPair(before: String, after: String): Pair<String, String> {
-        val beforeChunks = splitIntoChunks(before, 100).toMutableList()
-        val afterChunks = splitIntoChunks(after, 100).toMutableList()
+        val beforeChunks = splitIntoChunks(before.replace("\n\n", "\n"), 100).toMutableList()
+        val afterChunks = splitIntoChunks(after.replace("\n\n", "\n"), 100).toMutableList()
 
         fun removeBlank() {
             // Remove leading blank lines
@@ -154,13 +173,12 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
 
 
     private fun getDiffMessage(path: String, beforeContent: String, afterContent: String): String? {
-        val message = buildString {
-            appendLine("generate a short simple git commit message based on my below code changes:")
-            appendLine("my file located at:\n$path")
-            appendLine("my code before changes:\n${beforeContent.trim()}")
-            appendLine("my code after changes:\n${afterContent.trim()}")
-        }
-        return completions_remote(message.trim())
+        val message = arrayListOf<String>()
+        message.add("generate a short simple git commit message based on my below code changes:")
+        message.add("my file located at:\n$path")
+        message.add("my code before changes:\n${beforeContent.trim()}")
+        message.add("my code after changes:\n${afterContent.trim()}")
+        return completions_remote(message.joinToString("\n\n\n\n\n").trim())
     }
 
     private fun getDiffMessageRepeat(path: String, beforeContent: String, afterContent: String): String? {
@@ -232,6 +250,9 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             val error: String?
         )
 
+        println("completions_remote content")
+        println(content)
+
         val requestBody = RequestBody(
             content = content,
             api_url = API_URL,
@@ -248,6 +269,7 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             val apiResponse: ApiResponse? = gson.fromJson(response.body.string(), ApiResponse::class.java)
             return apiResponse?.response
         } catch (e: Exception) {
+            e.printStackTrace()
             return null
         }
     }
