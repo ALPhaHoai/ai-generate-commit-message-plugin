@@ -8,7 +8,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vcs.CommitMessageI
 import com.intellij.openapi.vcs.VcsDataKeys
-import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vcs.ui.Refreshable
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -24,7 +23,7 @@ private val REMOTE_API_URL = BuildConfig.REMOTE_API_URL
 
 class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
     override fun actionPerformed(event: AnActionEvent) {
-        val project = event.project
+        val project = event.project ?: return
 
         val commitPanel = getCommitPanel(event)
         if (commitPanel == null) {
@@ -32,14 +31,14 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             return
         }
 
+        commitPanel.setCommitMessage("")
         var msg: String? = null
-
         repeat(5) {
             msg = runCatching { getChangedMessage(project) }.getOrNull()
-            if (msg != null) return@repeat
+            if (msg?.isNotBlank() == true) return@repeat
         }
 
-        if (msg == null) {
+        if (msg.isNullOrBlank()) {
             showErrorDialog(project, "No changes found.")
         }
 
@@ -72,75 +71,107 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         return VcsDataKeys.COMMIT_MESSAGE_CONTROL.getData(event.dataContext)
     }
 
-    /** Retrieves all changed file paths from the selected commit files */
-    private fun getChangedMessage(project: Project?): String? {
-        project ?: return null
-        val changeListManager = ChangeListManager.getInstance(project)
+    private fun getChangedMessage(project: Project): String? {
+        val selectedChanges = getIncludedCheckedChangesFromCommit(project) ?: return null
 
-        val commitMessages = arrayListOf<String>()
-        changeListManager.allChanges.filter { file ->
-            file.virtualFile?.name?.let { name ->
-                listOf(".css", ".map", ".json").none { name.endsWith(it) }
-            } ?: false
-        }.forEachIndexed { index, file ->
-            val beforeContent = file.beforeRevision?.content  // Old file content
-            val afterContent = file.afterRevision?.content  // New file content
+        return selectedChanges
+            .asSequence()
+            .filterNot { it.shouldIgnoreFile() }
+            .mapNotNull { file ->
+                val before = file.beforeRevision?.content
+                val after = file.afterRevision?.content
+                val path = file.virtualFile?.canonicalPath
 
-            if (beforeContent != null && afterContent != null) {
-                val canonicalPath = file.virtualFile?.canonicalPath
-                val commitMessage = getDiffMessage(canonicalPath, beforeContent, afterContent)
-                if (commitMessage != null && commitMessage.isNotEmpty()) {
-                    commitMessages.add(commitMessage)
-                } else {
-                    //file too big, trim file content
+                if (before == null || after == null || path == null) return@mapNotNull null
 
-                    val beforeContentLines = splitIntoChunks(beforeContent, 100).toMutableList()
-                    val afterContentLines = splitIntoChunks(afterContent, 100).toMutableList()
-
-                    while (beforeContentLines.first().isBlank()) {
-                        beforeContentLines.removeFirst()
-                    }
-                    while (afterContentLines.first().isBlank()) {
-                        afterContentLines.removeFirst()
-                    }
-                    while (beforeContentLines.last().isBlank()) {
-                        beforeContentLines.removeLast()
-                    }
-                    while (afterContentLines.last().isBlank()) {
-                        afterContentLines.removeLast()
-                    }
-
-                    while (beforeContentLines.first().trim().equals(afterContentLines.first().trim())) {
-                        beforeContentLines.removeFirst()
-                        afterContentLines.removeFirst()
-                    }
-
-                    while (beforeContentLines.last().trim().equals(afterContentLines.last().trim())) {
-                        beforeContentLines.removeLast()
-                        afterContentLines.removeLast()
-                    }
-
-                    val newBeforeContent = beforeContentLines.joinToString("\n")
-                    val newAfterContent = afterContentLines.joinToString("\n")
-                    val newCommitMessage = getDiffMessage(canonicalPath, newBeforeContent, newAfterContent)
-                    if (newCommitMessage != null && newCommitMessage.isNotEmpty()) {
-                        commitMessages.add(newCommitMessage)
-                    }
+                val rawMessage = getDiffMessageRepeat(path, before, after)
+                if (!rawMessage.isNullOrBlank()) {
+                    return@mapNotNull "$path:\n$rawMessage"
                 }
+
+                val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
+
+                getDiffMessageRepeat(path, trimmedBefore, trimmedAfter)
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { "$path:\n$it" }
+            }
+            .toList()
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString("\n\n")
+    }
+
+    private fun trimDiffPair(before: String, after: String): Pair<String, String> {
+        val beforeChunks = splitIntoChunks(before, 100).toMutableList()
+        val afterChunks = splitIntoChunks(after, 100).toMutableList()
+
+        fun removeBlank() {
+            // Remove leading blank lines
+            while (beforeChunks.firstOrNull()?.isBlank() == true) {
+                beforeChunks.removeFirst()
+            }
+            while (afterChunks.firstOrNull()?.isBlank() == true) {
+                afterChunks.removeFirst()
+            }
+
+            // Remove trailing blank lines
+            while (beforeChunks.lastOrNull()?.isBlank() == true) {
+                beforeChunks.removeLast()
+            }
+            while (afterChunks.lastOrNull()?.isBlank() == true) {
+                afterChunks.removeLast()
             }
         }
 
-        return commitMessages.joinToString("\n")
+        removeBlank()
+
+        // Remove common leading lines
+        while (
+            beforeChunks.isNotEmpty() &&
+            afterChunks.isNotEmpty() &&
+            beforeChunks.first().trim() == afterChunks.first().trim()
+        ) {
+            beforeChunks.removeFirst()
+            afterChunks.removeFirst()
+
+            removeBlank()
+        }
+
+        // Remove common trailing lines
+        while (
+            beforeChunks.isNotEmpty() &&
+            afterChunks.isNotEmpty() &&
+            beforeChunks.last().trim() == afterChunks.last().trim()
+        ) {
+            beforeChunks.removeLast()
+            afterChunks.removeLast()
+
+            removeBlank()
+        }
+
+        return beforeChunks.joinToString("\n") to afterChunks.joinToString("\n")
     }
 
-    private fun getDiffMessage(path: String?, beforeContent: String, afterContent: String): String? {
+
+    private fun getDiffMessage(path: String, beforeContent: String, afterContent: String): String? {
         val message = buildString {
             appendLine("generate a short simple git commit message based on my below code changes:")
-            path?.trim()?.let { appendLine("my file located at:\n$it") }
+            appendLine("my file located at:\n$path")
             appendLine("my code before changes:\n${beforeContent.trim()}")
             appendLine("my code after changes:\n${afterContent.trim()}")
         }
         return completions_remote(message.trim())
+    }
+
+    private fun getDiffMessageRepeat(path: String, beforeContent: String, afterContent: String): String? {
+        var newCommitMessage: String? = null
+        repeat(10) {
+            newCommitMessage =
+                runCatching { getDiffMessage(path, beforeContent, afterContent) }.getOrNull()
+            if (newCommitMessage?.isNotEmpty() == true) {
+                return newCommitMessage
+            }
+        }
+        return null
     }
 
     fun completions(content: String): String? {
@@ -190,6 +221,7 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             val api_url: String,
             val api_token: String
         )
+
         data class ApiResponse(
             val response: String?,
             val error: String?
@@ -219,3 +251,4 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
 fun splitIntoChunks(text: String, chunkSize: Int = 50): List<String> {
     return text.lines().chunked(chunkSize).map { it.joinToString("\n") }
 }
+
