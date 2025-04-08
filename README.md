@@ -1,6 +1,8 @@
 # IntelliJ Plugin: AI-Powered Commit Message Generator
 
+<!-- Plugin description -->
 This IntelliJ IDEA plugin automatically generates Git commit messages based on your code changes using AI. It analyzes file diffs and produces concise and relevant commit messages to streamline your development workflow.
+<!-- Plugin description end -->
 
 ## ✨ Features
 
@@ -17,9 +19,9 @@ This IntelliJ IDEA plugin automatically generates Git commit messages based on y
 - Git integration enabled
 - An API endpoint that accepts code diffs and returns commit messages
 - Set the following in your `BuildConfig`:
-  - `API_URL`: The base URL for the model endpoint
-  - `REMOTE_API_URL`: Optional proxy endpoint for calling the AI service
-  - `API_TOKEN`: Your token to authenticate with the API
+    - `API_URL`: The base URL for the model endpoint
+    - `REMOTE_API_URL`: Optional proxy endpoint for calling the AI service
+    - `API_TOKEN`: Your token to authenticate with the API
 
 ### Installation
 
