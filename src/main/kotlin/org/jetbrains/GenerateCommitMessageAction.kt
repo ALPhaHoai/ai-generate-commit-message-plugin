@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
@@ -21,13 +22,20 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
-
-private val logger = Logger.getInstance("GitPlugin")
+private val logger = Logger.getInstance("GitCommitMessagePlugin")
 private val API_TOKEN = BuildConfig.API_TOKEN
 private val API_URL = BuildConfig.API_URL
 private val REMOTE_API_URL = BuildConfig.REMOTE_API_URL
 
 class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
+    private val httpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.MINUTES)
+            .readTimeout(10, TimeUnit.MINUTES)
+            .writeTimeout(10, TimeUnit.MINUTES)
+            .build()
+    }
+
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
 
@@ -75,14 +83,11 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
     }
 
     private fun getCommitPanel(event: AnActionEvent?): CommitMessageI? {
-        if (event == null) {
-            return null
+        val data = event?.let { Refreshable.PANEL_KEY.getData(it.dataContext) }
+        return when {
+            data is CommitMessageI -> data
+            else -> event?.let { VcsDataKeys.COMMIT_MESSAGE_CONTROL.getData(it.dataContext) }
         }
-        val data: Refreshable? = Refreshable.PANEL_KEY.getData(event.dataContext)
-        if (data is CommitMessageI) {
-            return data
-        }
-        return VcsDataKeys.COMMIT_MESSAGE_CONTROL.getData(event.dataContext)
     }
 
     private fun getChangedMessage(project: Project, indicator: ProgressIndicator): String? {
@@ -178,7 +183,14 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         message.add("my file located at:\n$path")
         message.add("my code before changes:\n${beforeContent.trim()}")
         message.add("my code after changes:\n${afterContent.trim()}")
-        return completions_remote(message.joinToString("\n\n\n\n\n").trim())
+
+        val content = message.joinToString("\n\n\n\n\n").trim()
+        if (service<PluginSettingsService>().useLocalModel) {
+            logger.info("Using locally hosted ChatGPT model for commit message generation.")
+            return completions(content)
+        } else {
+            return completions_remote(content)
+        }
     }
 
     private fun getDiffMessageRepeat(path: String, beforeContent: String, afterContent: String): String? {
@@ -194,7 +206,6 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
     }
 
     fun completions(content: String): String? {
-        val client = OkHttpClient()
         val gson = Gson()
         val mediaType = "application/json".toMediaType()
 
@@ -217,25 +228,19 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
                 "authorization",
                 "Bearer $API_TOKEN"
             )
-            .addHeader("content-type", "application/json")
             .addHeader(
                 "Cookie",
                 "token=$API_TOKEN"
             )
             .build()
 
-        val response = client.newCall(request).execute()
+        val response = httpClient.newCall(request).execute()
         val jsonResponse = response.body.string()
         val chatResponse = gson.fromJson(jsonResponse, ChatResponse::class.java)
         return chatResponse?.choices?.firstOrNull()?.message?.content
     }
 
     fun completions_remote(content: String): String? {
-        val client = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.MINUTES)
-            .readTimeout(10, TimeUnit.MINUTES)
-            .writeTimeout(10, TimeUnit.MINUTES)
-            .build()
         val gson = Gson()
         val mediaType = "application/json".toMediaType()
 
@@ -250,8 +255,7 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             val error: String?
         )
 
-        println("completions_remote content")
-        println(content)
+        logger.info("completions_remote content: $content")
 
         val requestBody = RequestBody(
             content = content,
@@ -265,7 +269,7 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
                 .post(jsonString.toRequestBody(mediaType))
                 .addHeader("Content-Type", "application/json")
                 .build()
-            val response = client.newCall(request).execute()
+            val response = httpClient.newCall(request).execute()
             val apiResponse: ApiResponse? = gson.fromJson(response.body.string(), ApiResponse::class.java)
             return apiResponse?.response
         } catch (e: Exception) {

@@ -7,6 +7,14 @@
 
     <depends>com.intellij.modules.platform</depends>
 
+    <!-- Register ProjectActivity implemented in Kotlin -->
+    <extensions>
+        <extension point="com.intellij.postStartupActivity"
+                   implementation="org.jetbrains.MyProjectActivity"/>
+    </extensions>
+
+    <applicationService serviceImplementation="org.jetbrains.PluginSettingsService"/>
+
     <actions>
         <!-- This action adds a button inside Git commit message panel -->
         <action id="com.example.autocommit.Action"
