@@ -74,12 +74,14 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
     }
 
     private fun showErrorDialog(project: Project?, message: String) {
-        Messages.showMessageDialog(
-            project,
-            message,
-            "Error",
-            Messages.getErrorIcon()
-        )
+        ApplicationManager.getApplication().invokeLater {
+            Messages.showMessageDialog(
+                project,
+                message,
+                "Error",
+                Messages.getErrorIcon()
+            )
+        }
     }
 
     private fun getCommitPanel(event: AnActionEvent?): CommitMessageI? {

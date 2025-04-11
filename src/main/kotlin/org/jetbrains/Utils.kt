@@ -89,5 +89,5 @@ private fun findChangesTree(component: Component?): ChangesTree? {
 
 fun Change.shouldIgnoreFile(): Boolean {
     val name = this.virtualFile?.name ?: return false
-    return listOf(".css", ".map", ".json").any { name.endsWith(it) }
+    return listOf(".map", ".json").any { name.endsWith(it) }
 }

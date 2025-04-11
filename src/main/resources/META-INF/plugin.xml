@@ -1,4 +1,3 @@
-<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
     <id>com.example.gitcommitgenerator</id>
     <name>AI Generate Commit Message</name>
@@ -8,12 +7,9 @@
     <depends>com.intellij.modules.platform</depends>
 
     <!-- Register ProjectActivity implemented in Kotlin -->
-    <extensions>
-        <extension point="com.intellij.postStartupActivity"
-                   implementation="org.jetbrains.MyProjectActivity"/>
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="org.jetbrains.MyProjectActivity"/>
     </extensions>
-
-    <applicationService serviceImplementation="org.jetbrains.PluginSettingsService"/>
 
     <actions>
         <!-- This action adds a button inside Git commit message panel -->
