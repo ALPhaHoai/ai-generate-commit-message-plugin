@@ -35,7 +35,7 @@ fun completions(content: String, apiToken: String): String? {
     val jsonString = gson.toJson(requestModel)
 
     val request = Request.Builder()
-        .url(API_URL)
+        .url("$API_URL/api/chat/completions")
         .post(jsonString.toRequestBody(mediaType))
         .addHeader("accept", "application/json")
         .addHeader("content-type", "application/json")
@@ -58,8 +58,6 @@ fun completions(content: String, apiToken: String): String? {
 fun completions_remote(content: String, apiToken: String): String? {
     val gson = Gson()
     val mediaType = "application/json".toMediaType()
-
-    logger.info("completions_remote content: $content")
 
     val requestBody = RemoteRequestBody(
         action = "generate_message",
