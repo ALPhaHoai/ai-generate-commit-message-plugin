@@ -9,59 +9,81 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.IOException
 import java.net.URI
-import com.intellij.openapi.components.service
 
 class MyProjectActivity : ProjectActivity {
 
     override suspend fun execute(project: Project) {
         val url = URI(BuildConfig.API_URL).toURL()
         val baseUrl = "${url.protocol}://${url.host}"
+        val email = BuildConfig.EMAIL
+        val password = BuildConfig.PASSWORD
+        val settings = PluginSettingsService.getInstance()
+        var apiToken = settings.state.apiToken
 
-        try {
-            // Do HTTP request on IO dispatcher
-            val statusCode = withContext(Dispatchers.IO) {
-                getStatusCode(baseUrl)
+        val isLocal = withContext(Dispatchers.IO) {
+            try {
+                getStatusCode(baseUrl) == 200
+            } catch (e: Exception) {
+                notifyError(project, "Connection Failed", "Could not reach $baseUrl: ${e.message}")
+                println("❌ Error checking $baseUrl: ${e.message}")
+                false
+            }
+        }
+
+        settings.state.useLocalModel = isLocal
+        println("🌐 Server check: $baseUrl is ${if (isLocal) "available (200)" else "unavailable"}")
+
+        if (isLocal) {
+            notifyInfo(project, "Server Check Successful", "$baseUrl responded with status 200")
+        }
+
+        val isTokenMissing = apiToken.isNullOrBlank()
+        val isTokenValid = !isTokenMissing && withContext(Dispatchers.IO) {
+            if (isLocal) auth(apiToken!!) else auth_remote(apiToken!!)
+        }
+
+        if (isTokenMissing || !isTokenValid) {
+            notifyError(
+                project,
+                if (isTokenMissing) "Missing Token" else "Invalid Token",
+                "Current token is ${if (isTokenMissing) "missing" else "invalid"}. Requesting a new one..."
+            )
+
+            val newToken = withContext(Dispatchers.IO) {
+                if (isLocal) login(email, password) else login_remote(email, password)
             }
 
-            service<PluginSettingsService>().useLocalModel = (statusCode == 200)
-
-            println("🌐 Website status code for $baseUrl: $statusCode")
-
-            // Show a notification on the UI
-            Notifications.Bus.notify(
-                Notification(
-                    "GitCommitGenerator",
-                    "🎯 HTTP Check Complete",
-                    "Status code from $baseUrl: $statusCode",
-                    NotificationType.INFORMATION
-                ),
-                project
-            )
-
-        } catch (e: IOException) {
-            println("❌ Failed to check website: ${e.message}")
-
-            Notifications.Bus.notify(
-                Notification(
-                    "GitCommitGenerator",
-                    "❌ HTTP Request Failed",
-                    "Error checking $baseUrl: ${e.message}",
-                    NotificationType.ERROR
-                ),
-                project
-            )
+            if (!newToken.isNullOrBlank()) {
+                apiToken = newToken
+                settings.state.apiToken = newToken
+                notifyInfo(project, "Token Refreshed", "A new API token was successfully obtained.")
+            } else {
+                notifyError(project, "Token Error", "Failed to acquire a new API token.")
+            }
+        } else {
+            notifyInfo(project, "Token Verified", "Your API token is valid and active.")
         }
     }
 
     private fun getStatusCode(url: String): Int {
-        val request = Request.Builder()
-            .url(url)
-            .build()
-
+        val request = Request.Builder().url(url).build()
         OkHttpClient().newCall(request).execute().use { response ->
             return response.code
         }
+    }
+
+    private fun notifyInfo(project: Project, title: String, content: String) {
+        Notifications.Bus.notify(
+            Notification("GitCommitGenerator", title, content, NotificationType.INFORMATION),
+            project
+        )
+    }
+
+    private fun notifyError(project: Project, title: String, content: String) {
+        Notifications.Bus.notify(
+            Notification("GitCommitGenerator", title, content, NotificationType.ERROR),
+            project
+        )
     }
 }

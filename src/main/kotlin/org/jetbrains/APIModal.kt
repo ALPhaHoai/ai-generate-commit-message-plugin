@@ -65,3 +65,66 @@ data class TokenDetails(
     @SerializedName("accepted_prediction_tokens") val acceptedPredictionTokens: Int?,
     @SerializedName("rejected_prediction_tokens") val rejectedPredictionTokens: Int?
 )
+
+data class SignInRequest(
+    val email: String,
+    val password: String
+)
+
+data class SignInResponse(
+    @SerializedName("id") val id: String,
+    @SerializedName("email") val email: String,
+    @SerializedName("name") val name: String,
+    @SerializedName("role") val role: String,
+    @SerializedName("profile_image_url") val profileImageUrl: String,
+    @SerializedName("token") val token: String,
+    @SerializedName("token_type") val tokenType: String,
+    @SerializedName("expires_at") val expiresAt: String?,
+    @SerializedName("permissions") val permissions: Permissions
+)
+
+data class Permissions(
+    @SerializedName("workspace") val workspace: Workspace,
+    @SerializedName("chat") val chat: Chat,
+    @SerializedName("features") val features: Features
+)
+
+data class Workspace(
+    @SerializedName("models") val models: Boolean,
+    @SerializedName("knowledge") val knowledge: Boolean,
+    @SerializedName("prompts") val prompts: Boolean,
+    @SerializedName("tools") val tools: Boolean
+)
+
+data class Chat(
+    @SerializedName("controls") val controls: Boolean,
+    @SerializedName("file_upload") val fileUpload: Boolean,
+    @SerializedName("delete") val delete: Boolean,
+    @SerializedName("edit") val edit: Boolean,
+    @SerializedName("temporary") val temporary: Boolean
+)
+
+data class AuthResponse(
+    val id: String,
+    val email: String,
+    val name: String,
+    val role: String,
+    @SerializedName("profile_image_url") val profileImageUrl: String,
+    val token: String,
+    @SerializedName("token_type") val tokenType: String,
+    @SerializedName("expires_at") val expiresAt: String?, // null in your case
+    val permissions: Permissions
+)
+
+data class RemoteRequestBody(
+    val action: String? = null,
+    val content: String? = null,
+    val api_url: String? = null,
+    val api_token: String? = null,
+    val email: String? = null,
+    val password: String? = null,
+)
+data class RemoteApiResponse(
+    val response: String?,
+    val error: String?
+)
