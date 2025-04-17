@@ -6,7 +6,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import java.util.concurrent.TimeUnit
 
 private val API_URL = BuildConfig.API_URL
@@ -20,159 +19,203 @@ private val httpClient: OkHttpClient by lazy {
 }
 private val logger = Logger.getInstance("GitCommitMessagePlugin")
 
-fun completions(content: String, apiToken: String): String? {
+fun generateCommitMessageWithContext(
+    beforeCode: String,
+    afterCode: String,
+    filename: String,
+    apiToken: String,
+    useProxy: Boolean = false,
+    retry: Int = 10
+): String? {
+    val prompts = arrayListOf(
+        """
+        I have updated part of my code. Below are the details of the change, including the original code (before) and the updated code (after). Please generate a Git commit message that:
+        
+        - Follows the Conventional Commits format (type(scope): message)
+        - Uses imperative mood ("add", "fix", "refactor", not "added" or "fixed")
+        - Is clear and concise, summarizing what changed and (if possible) why
+        - Includes a short commit message (72 characters or fewer)
+        - (Optional) Suggests an extended description, if the change is complex
+
+
+
+        📄 File: $filename
+    """.trimIndent(), "Before:\n\n\n\n$beforeCode".trimIndent(), "After:\n\n\n\n$afterCode".trimIndent()
+    )
+
+    val history = mutableListOf<Message>()
+
+    for (prompt in prompts) {
+        val userMessage = Message(role = "user", content = prompt)
+        val messages = history + userMessage
+
+        var assistantMessage: Message? = null
+        var attempts = 0
+
+        while (assistantMessage == null && attempts < retry) {
+            assistantMessage = runCatching{ completions(messages, apiToken, useProxy) }.getOrNull()
+            attempts++
+        }
+
+        if (assistantMessage == null) return null
+
+        history.add(userMessage)
+        history.add(assistantMessage)
+    }
+
+    return history.lastOrNull { it.role == "assistant" }?.content
+}
+
+fun completions(messages: List<Message>, apiToken: String, useProxy: Boolean = false): Message? {
     val gson = Gson()
     val mediaType = "application/json".toMediaType()
 
+    // Build the original request payload
     val requestModel = RequestModel(
         stream = false,
         model = "chatgpt-4o-latest",
-        messages = listOf(Message(role = "user", content = content)),
-        features = Features(imageGeneration = false, codeInterpreter = false, webSearch = false),
-        modelItem = ModelItem(id = "chatgpt-4o-latest", `object` = "model", name = "chatgpt-4o-latest", urlIdx = 0)
+        messages = messages,
+        features = Features(
+            imageGeneration = false,
+            codeInterpreter = false,
+            webSearch = false
+        ),
+        modelItem = ModelItem(
+            id = "chatgpt-4o-latest",
+            `object` = "model",
+            name = "chatgpt-4o-latest",
+            urlIdx = 0
+        )
     )
 
-    val jsonString = gson.toJson(requestModel)
+    val actualRequestJson = gson.toJson(requestModel)
 
+    // Determine target URL and request body
+    val (url, requestBodyJson) = if (useProxy) {
+        val proxyPayload = mapOf(
+            "target_url" to "$API_URL/api/chat/completions",
+            "method" to "POST",
+            "data" to gson.fromJson(actualRequestJson, Map::class.java),
+            "headers" to mapOf(
+                "Authorization" to "Bearer $apiToken",
+                "Cookie" to "token=$apiToken"
+            )
+        )
+        REMOTE_API_URL to gson.toJson(proxyPayload)
+    } else {
+        "$API_URL/api/chat/completions" to actualRequestJson
+    }
+
+    // Build the request
     val request = Request.Builder()
-        .url("$API_URL/api/chat/completions")
-        .post(jsonString.toRequestBody(mediaType))
-        .addHeader("accept", "application/json")
-        .addHeader("content-type", "application/json")
-        .addHeader(
-            "authorization",
-            "Bearer $apiToken"
-        )
-        .addHeader(
-            "Cookie",
-            "token=$apiToken"
-        )
+        .url(url)
+        .post(requestBodyJson.toRequestBody(mediaType))
+        .addHeader("Accept", "application/json")
+        .addHeader("Content-Type", "application/json")
+        .addHeader("Authorization", "Bearer $apiToken")
+        .addHeader("Cookie", "token=$apiToken")
         .build()
 
+    // Execute request
     val response = httpClient.newCall(request).execute()
-    val jsonResponse = response.body.string()
-    val chatResponse = gson.fromJson(jsonResponse, ChatResponse::class.java)
-    return chatResponse?.choices?.firstOrNull()?.message?.content
+    val responseBody = response.body.string()
+
+    // Parse JSON response
+    val chatResponse = Gson().fromJson(responseBody, ChatResponse::class.java)
+    return chatResponse?.choices?.lastOrNull { it.message.role == "assistant" }?.message
 }
 
-fun completions_remote(content: String, apiToken: String): String? {
+fun login(email: String, password: String, useProxy: Boolean = false): String? {
     val gson = Gson()
     val mediaType = "application/json".toMediaType()
 
-    val requestBody = RemoteRequestBody(
-        action = "generate_message",
-        content = content,
-        api_url = API_URL,
-        api_token = apiToken
-    )
-    val jsonString = gson.toJson(requestBody)
-    val request = Request.Builder()
-        .url(REMOTE_API_URL)
-        .post(jsonString.toRequestBody(mediaType))
-        .addHeader("Content-Type", "application/json")
-        .build()
-    val response = httpClient.newCall(request).execute()
-    try {
-        val apiResponse: RemoteApiResponse? = gson.fromJson(response.body.string(), RemoteApiResponse::class.java)
-        return apiResponse?.response
-    } catch (e: Exception) {
-        e.printStackTrace()
-        return null
-    }
-}
-
-fun login(email: String, password: String): String? {
-    val client = OkHttpClient()
-    val gson = Gson()
-
+    // Build the actual request body
     val requestBodyObj = SignInRequest(
         email = email,
         password = password
     )
-
     val jsonBody = gson.toJson(requestBodyObj)
-    val mediaType = "application/json".toMediaType()
-    val requestBody = jsonBody.toRequestBody(mediaType)
 
+    // Determine request target and payload
+    val (url, finalRequestBody) = if (useProxy) {
+        val proxyPayload = mapOf(
+            "target_url" to "$API_URL/api/v1/auths/signin",
+            "method" to "POST",
+            "data" to gson.fromJson(jsonBody, Map::class.java)
+            // You can add headers here if needed:
+            // "headers" to mapOf("Content-Type" to "application/json")
+        )
+        REMOTE_API_URL to gson.toJson(proxyPayload).toRequestBody(mediaType)
+    } else {
+        "$API_URL/api/v1/auths/signin" to jsonBody.toRequestBody(mediaType)
+    }
+
+    // Build the request
     val request = Request.Builder()
-        .url("$API_URL/api/v1/auths/signin")
-        .post(requestBody)
-        .addHeader("content-type", "application/json")
+        .url(url)
+        .post(finalRequestBody)
+        .addHeader("Content-Type", "application/json")
         .build()
-    val response = client.newCall(request).execute()
+
+    // Execute and handle response
+    val response = httpClient.newCall(request).execute()
+    val responseBody = response.body.string()
     return try {
-        val loginResponse = Gson().fromJson(response.body.string(), SignInResponse::class.java)
-        return loginResponse.token
+        val loginResponse = gson.fromJson(responseBody, SignInResponse::class.java)
+        loginResponse?.token
     } catch (e: Exception) {
         e.printStackTrace()
         null
     }
 }
 
-fun login_remote(email: String, password: String): String? {
+
+fun auth(token: String, useProxy: Boolean = false): Boolean {
     val gson = Gson()
-    val requestBody = RemoteRequestBody(
-        action = "login",
-        api_url = API_URL,
-        email = email,
-        password = password,
-    )
-    val jsonString = gson.toJson(requestBody)
     val mediaType = "application/json".toMediaType()
 
-    val request = Request.Builder()
-        .url(REMOTE_API_URL)
-        .post(jsonString.toRequestBody(mediaType))
-        .addHeader("Content-Type", "application/json")
-        .build()
-    val response = httpClient.newCall(request).execute()
-    return try {
-        val loginResponse = gson.fromJson(response.body.string(), SignInResponse::class.java) ?: return null
-        loginResponse.token
-    } catch (e: Exception) {
-        e.printStackTrace()
-        return null
+    // Prepare target URL
+    val targetUrl = "$API_URL/api/v1/auths/"
+
+    // Determine request URL and body
+    val (url, request) = if (useProxy) {
+        // POST to PHP proxy
+        val proxyPayload = mapOf(
+            "target_url" to targetUrl,
+            "method" to "GET",
+            "headers" to mapOf(
+                "Authorization" to "Bearer $token",
+                "Cookie" to "token=$token"
+            )
+        )
+
+        val proxyBody = gson.toJson(proxyPayload).toRequestBody(mediaType)
+
+        REMOTE_API_URL to Request.Builder()
+            .url(REMOTE_API_URL)
+            .post(proxyBody)
+            .addHeader("Content-Type", "application/json")
+            .build()
+    } else {
+        // Direct GET request
+        targetUrl to Request.Builder()
+            .url(targetUrl)
+            .get()
+            .addHeader("Authorization", "Bearer $token")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Cookie", "token=$token")
+            .build()
     }
-}
 
-fun auth(token: String): Boolean {
-    val request = Request.Builder()
-        .url(API_URL + "/api/v1/auths/")
-        .get()
-        .addHeader("Authorization", "Bearer $token")
-        .addHeader("Content-Type", "application/json")
-        .addHeader("Cookie", "token=$token")
-        .build()
-
+    // Execute request
     val response = httpClient.newCall(request).execute()
+    val json = response.body.string()
+
     return try {
-        val authResponse = Gson().fromJson(response.body.string(), AuthResponse::class.java)
+        val authResponse = gson.fromJson(json, AuthResponse::class.java)
         authResponse.email.isNotEmpty()
     } catch (e: Exception) {
         e.printStackTrace()
-        false
-    }
-}
-
-fun auth_remote(token: String): Boolean {
-    val gson = Gson()
-    val requestBody = RemoteRequestBody(
-        action = "auth",
-        api_url = API_URL,
-        api_token = token
-    )
-    val jsonString = gson.toJson(requestBody)
-    val mediaType = "application/json".toMediaType()
-    val request = Request.Builder()
-        .url(REMOTE_API_URL)
-        .post(jsonString.toRequestBody(mediaType))
-        .addHeader("Content-Type", "application/json")
-        .build()
-    val response = httpClient.newCall(request).execute()
-    return try {
-        val authResponse = Gson().fromJson(response.body.string(), AuthResponse::class.java)
-        authResponse.email.isNotEmpty()
-    } catch (e: Exception) {
         false
     }
 }

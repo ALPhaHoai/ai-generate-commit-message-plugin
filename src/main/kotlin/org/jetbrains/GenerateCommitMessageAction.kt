@@ -3,7 +3,6 @@ package org.jetbrains
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
@@ -90,10 +89,10 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
                 continue
             }
 
-            var rawMessage = getDiffMessageRepeat(path, before, after)
+            var rawMessage = getDiffMessage(path, before, after)
             if (rawMessage.isNullOrBlank()) {
                 val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
-                rawMessage = getDiffMessageRepeat(path, trimmedBefore, trimmedAfter)
+                rawMessage = getDiffMessage(path, trimmedBefore, trimmedAfter)
             }
 
             if (!rawMessage.isNullOrBlank()) {
@@ -157,31 +156,13 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
 
 
     private fun getDiffMessage(path: String, beforeContent: String, afterContent: String): String? {
-        val message = arrayListOf<String>()
-        message.add("generate a short simple git commit message based on my below code changes:")
-        message.add("my file located at:\n$path")
-        message.add("my code before changes:\n${beforeContent.trim()}")
-        message.add("my code after changes:\n${afterContent.trim()}")
-
-        val content = message.joinToString("\n\n\n\n\n").trim()
-        if (PluginSettingsService.getInstance().state.useLocalModel) {
-            logger.info("Using locally hosted ChatGPT model for commit message generation.")
-            return completions(content, PluginSettingsService.getInstance().state.apiToken ?: "")
-        } else {
-            return completions_remote(content, PluginSettingsService.getInstance().state.apiToken ?: "")
-        }
-    }
-
-    private fun getDiffMessageRepeat(path: String, beforeContent: String, afterContent: String): String? {
-        var newCommitMessage: String? = null
-        repeat(10) {
-            newCommitMessage =
-                runCatching { getDiffMessage(path, beforeContent, afterContent) }.getOrNull()
-            if (newCommitMessage?.isNotEmpty() == true) {
-                return newCommitMessage
-            }
-        }
-        return null
+        return generateCommitMessageWithContext(
+            beforeCode = beforeContent,
+            afterCode = afterContent,
+            filename = path,
+            apiToken = PluginSettingsService.getInstance().state.apiToken ?: "",
+            useProxy = !PluginSettingsService.getInstance().state.useLocalModel
+        )
     }
 
 

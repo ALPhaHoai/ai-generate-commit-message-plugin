@@ -40,7 +40,7 @@ class MyProjectActivity : ProjectActivity {
 
         val isTokenMissing = apiToken.isNullOrBlank()
         val isTokenValid = !isTokenMissing && withContext(Dispatchers.IO) {
-            if (isLocal) auth(apiToken!!) else auth_remote(apiToken!!)
+            auth(apiToken!!, !isLocal)
         }
 
         if (isTokenMissing || !isTokenValid) {
@@ -51,7 +51,7 @@ class MyProjectActivity : ProjectActivity {
             )
 
             val newToken = withContext(Dispatchers.IO) {
-                if (isLocal) login(email, password) else login_remote(email, password)
+                login(email, password, !isLocal)
             }
 
             if (!newToken.isNullOrBlank()) {
