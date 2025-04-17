@@ -90,10 +90,10 @@ fun completions(messages: List<Message>, apiToken: String, useProxy: Boolean = f
 
     val actualRequestJson = gson.toJson(requestModel)
 
-    // Determine target URL and request body
+    val targetUrl = "$API_URL/api/chat/completions"
     val (url, requestBodyJson) = if (useProxy) {
         val proxyPayload = mapOf(
-            "target_url" to "$API_URL/api/chat/completions",
+            "target_url" to targetUrl,
             "method" to "POST",
             "data" to gson.fromJson(actualRequestJson, Map::class.java),
             "headers" to mapOf(
@@ -103,7 +103,7 @@ fun completions(messages: List<Message>, apiToken: String, useProxy: Boolean = f
         )
         REMOTE_API_URL to gson.toJson(proxyPayload)
     } else {
-        "$API_URL/api/chat/completions" to actualRequestJson
+        targetUrl to actualRequestJson
     }
 
     // Build the request
@@ -136,10 +136,10 @@ fun login(email: String, password: String, useProxy: Boolean = false): String? {
     )
     val jsonBody = gson.toJson(requestBodyObj)
 
-    // Determine request target and payload
+    val targetUrl = "$API_URL/api/v1/auths/signin"
     val (url, finalRequestBody) = if (useProxy) {
         val proxyPayload = mapOf(
-            "target_url" to "$API_URL/api/v1/auths/signin",
+            "target_url" to targetUrl,
             "method" to "POST",
             "data" to gson.fromJson(jsonBody, Map::class.java)
             // You can add headers here if needed:
@@ -147,7 +147,7 @@ fun login(email: String, password: String, useProxy: Boolean = false): String? {
         )
         REMOTE_API_URL to gson.toJson(proxyPayload).toRequestBody(mediaType)
     } else {
-        "$API_URL/api/v1/auths/signin" to jsonBody.toRequestBody(mediaType)
+        targetUrl to jsonBody.toRequestBody(mediaType)
     }
 
     // Build the request
@@ -176,34 +176,32 @@ fun auth(token: String, useProxy: Boolean = false): Boolean {
 
     // Prepare target URL
     val targetUrl = "$API_URL/api/v1/auths/"
+    val headers = mapOf(
+        "Authorization" to "Bearer $token",
+        "Cookie" to "token=$token"
+    )
 
-    // Determine request URL and body
-    val (url, request) = if (useProxy) {
-        // POST to PHP proxy
+    val request = if (useProxy) {
         val proxyPayload = mapOf(
             "target_url" to targetUrl,
             "method" to "GET",
-            "headers" to mapOf(
-                "Authorization" to "Bearer $token",
-                "Cookie" to "token=$token"
-            )
+            "headers" to headers
         )
-
         val proxyBody = gson.toJson(proxyPayload).toRequestBody(mediaType)
 
-        REMOTE_API_URL to Request.Builder()
+        Request.Builder()
             .url(REMOTE_API_URL)
             .post(proxyBody)
             .addHeader("Content-Type", "application/json")
             .build()
     } else {
-        // Direct GET request
-        targetUrl to Request.Builder()
+        Request.Builder()
             .url(targetUrl)
             .get()
-            .addHeader("Authorization", "Bearer $token")
-            .addHeader("Content-Type", "application/json")
-            .addHeader("Cookie", "token=$token")
+            .apply {
+                headers.forEach { (key, value) -> addHeader(key, value) }
+                addHeader("Content-Type", "application/json")
+            }
             .build()
     }
 
