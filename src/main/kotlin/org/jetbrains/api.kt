@@ -73,7 +73,7 @@ fun completions(messages: List<Message>, apiToken: String, useProxy: Boolean = f
     // Build the original request payload
     val requestModel = RequestModel(
         stream = false,
-        model = "chatgpt-4o-latest",
+        model = "gpt-4.1",
         messages = messages,
         features = Features(
             imageGeneration = false,
@@ -81,9 +81,9 @@ fun completions(messages: List<Message>, apiToken: String, useProxy: Boolean = f
             webSearch = false
         ),
         modelItem = ModelItem(
-            id = "chatgpt-4o-latest",
+            id = "gpt-4.1",
             `object` = "model",
-            name = "chatgpt-4o-latest",
+            name = "gpt-4.1",
             urlIdx = 0
         )
     )
