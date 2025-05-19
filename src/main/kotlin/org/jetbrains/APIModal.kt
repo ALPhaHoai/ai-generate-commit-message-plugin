@@ -50,6 +50,18 @@ data class Choice(
     @SerializedName("finish_reason") val finishReason: String
 )
 
+data class ChatCompletionChunk(
+    val choices: List<ChunkChoice>
+)
+
+data class ChunkChoice(
+    val delta: DeltaContent?
+)
+
+data class DeltaContent(
+    val content: String?
+)
+
 data class Usage(
     @SerializedName("prompt_tokens") val promptTokens: Int,
     @SerializedName("completion_tokens") val completionTokens: Int,

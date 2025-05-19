@@ -32,18 +32,65 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = true
                 indicator.text = "Analyzing code changes and generating message..."
-                var msg: String? = null
-                repeat(5) {
-                    msg = runCatching { getChangedMessage(project, indicator) }.getOrNull()
-                    if (msg?.isNotBlank() == true) return@repeat
+
+                val selectedChanges = getIncludedCheckedChangesFromCommit(project) ?: return
+
+                val commitMessage = StringBuilder()
+
+                val changes = selectedChanges
+                    .filterNot { it.shouldIgnoreFile() }
+
+                indicator.text = "Found ${changes.size} file(s) to process..."
+
+                for ((index, file) in changes.withIndex()) {
+                    val path = file.virtualFile?.canonicalPath
+                    indicator.text =
+                        "Processing file ${index + 1} of ${changes.size}: ${file.virtualFile?.name ?: "Unknown"}"
+
+                    val before = file.beforeRevision?.content
+                    val after = file.afterRevision?.content
+
+                    if (before == null || after == null || path == null) {
+                        continue
+                    }
+
+                    val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
+
+                    generateCommitMessageWithContext(
+                        beforeCode = trimmedBefore,
+                        afterCode = trimmedAfter,
+                        filename = path,
+                        apiToken = PluginSettingsService.getInstance().state.apiToken ?: "",
+                        useProxy = !PluginSettingsService.getInstance().state.useLocalModel,
+                        // WHENEVER DATA ARRIVES
+                        onMessage = { chunk: String ->
+                            commitMessage.append(chunk)
+                            ApplicationManager.getApplication().invokeLater {
+                                commitPanel.setCommitMessage(commitMessage.toString())
+                            }
+                        },
+                        // WHEN STREAMING IS DONE
+                        onComplete = { finalResult: String? ->
+//                            if (!finalResult.isNullOrBlank()) {
+//                                if (commitMessage.isNotEmpty()) {
+//                                    commitMessage.append("\n\n")
+//                                }
+//                                commitMessage.append("$path:\n$finalResult")
+//                                ApplicationManager.getApplication().invokeLater {
+//                                    commitPanel.setCommitMessage(commitMessage.toString())
+//                                }
+//                            }
+                        }
+                    )
+
+
+
+
                 }
 
-                if (msg.isNullOrBlank()) {
+                if (commitMessage.isEmpty()) {
                     showErrorDialog(project, "No changes found.")
-                }
-
-                ApplicationManager.getApplication().invokeLater {
-                    commitPanel.setCommitMessage(msg)
+                    return
                 }
             }
         })
@@ -66,41 +113,6 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
             data is CommitMessageI -> data
             else -> event?.let { VcsDataKeys.COMMIT_MESSAGE_CONTROL.getData(it.dataContext) }
         }
-    }
-
-    private fun getChangedMessage(project: Project, indicator: ProgressIndicator): String? {
-        val selectedChanges = getIncludedCheckedChangesFromCommit(project) ?: return null
-
-        val resultMessages = mutableListOf<String>()
-
-        val changes = selectedChanges
-            .filterNot { it.shouldIgnoreFile() }
-
-        indicator.text = "Found ${changes.size} file(s) to process..."
-
-        for ((index, file) in changes.withIndex()) {
-            val path = file.virtualFile?.canonicalPath
-            indicator.text = "Processing file ${index + 1} of ${changes.size}: ${file.virtualFile?.name ?: "Unknown"}"
-
-            val before = file.beforeRevision?.content
-            val after = file.afterRevision?.content
-
-            if (before == null || after == null || path == null) {
-                continue
-            }
-
-            var rawMessage = getDiffMessage(path, before, after)
-            if (rawMessage.isNullOrBlank()) {
-                val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
-                rawMessage = getDiffMessage(path, trimmedBefore, trimmedAfter)
-            }
-
-            if (!rawMessage.isNullOrBlank()) {
-                resultMessages.add("$path:\n$rawMessage")
-            }
-        }
-
-        return if (resultMessages.isNotEmpty()) resultMessages.joinToString("\n\n") else null
     }
 
     private fun trimDiffPair(before: String, after: String): Pair<String, String> {
@@ -152,17 +164,6 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         }
 
         return beforeChunks.joinToString("\n") to afterChunks.joinToString("\n")
-    }
-
-
-    private fun getDiffMessage(path: String, beforeContent: String, afterContent: String): String? {
-        return generateCommitMessageWithContext(
-            beforeCode = beforeContent,
-            afterCode = afterContent,
-            filename = path,
-            apiToken = PluginSettingsService.getInstance().state.apiToken ?: "",
-            useProxy = !PluginSettingsService.getInstance().state.useLocalModel
-        )
     }
 
 

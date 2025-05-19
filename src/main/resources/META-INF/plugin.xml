@@ -15,7 +15,9 @@
         <!-- This action adds a button inside Git commit message panel -->
         <action id="com.example.autocommit.Action"
                 class="org.jetbrains.GenerateCommitMessageAction"
-                text="AI Generate Commit Message">
+                text="AI Generate Commit Message"
+                icon="icons/auto_generate_commit.svg"
+        >
             <add-to-group group-id="Vcs.MessageActionGroup" anchor="last"/>
         </action>
     </actions>

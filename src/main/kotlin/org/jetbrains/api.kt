@@ -7,6 +7,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import okhttp3.*
+import okhttp3.sse.EventSource
+import okhttp3.sse.EventSourceListener
+import okhttp3.sse.EventSources
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPOutputStream
+
 
 private val API_URL = BuildConfig.API_URL
 private val REMOTE_API_URL = BuildConfig.REMOTE_API_URL
@@ -25,9 +32,11 @@ fun generateCommitMessageWithContext(
     filename: String,
     apiToken: String,
     useProxy: Boolean = false,
-    retry: Int = 10
-): String? {
-    val prompts = arrayListOf(
+    retry: Int = 10,
+    onMessage: (String) -> Unit,
+    onComplete: (String?) -> Unit
+) {
+    val messages = arrayListOf(
         """
         I have updated part of my code. Below are the details of the change, including the original code (before) and the updated code (after). Please generate a Git commit message that:
         
@@ -36,43 +45,37 @@ fun generateCommitMessageWithContext(
         - Is clear and concise, summarizing what changed and (if possible) why
         - Includes a short commit message (72 characters or fewer)
         - (Optional) Suggests an extended description, if the change is complex
+        - No need descriptions
 
 
 
         📄 File: $filename
     """.trimIndent(), "Before:\n\n\n\n$beforeCode".trimIndent(), "After:\n\n\n\n$afterCode".trimIndent()
+    ).map { Message("user", it) }
+
+    completions(
+        messages = messages, apiToken, useProxy,
+        onMessage = onMessage,
+        onComplete = { assistantResponse ->
+
+        }
     )
 
-    val history = mutableListOf<Message>()
-
-    for (prompt in prompts) {
-        val userMessage = Message(role = "user", content = prompt)
-        val messages = history + userMessage
-
-        var assistantMessage: Message? = null
-        var attempts = 0
-
-        while (assistantMessage == null && attempts < retry) {
-            assistantMessage = runCatching{ completions(messages, apiToken, useProxy) }.getOrNull()
-            attempts++
-        }
-
-        if (assistantMessage == null) return null
-
-        history.add(userMessage)
-        history.add(assistantMessage)
-    }
-
-    return history.lastOrNull { it.role == "assistant" }?.content
 }
 
-fun completions(messages: List<Message>, apiToken: String, useProxy: Boolean = false): Message? {
+fun completions(
+    messages: List<Message>,
+    apiToken: String,
+    useProxy: Boolean = false,
+    onMessage: (String) -> Unit,
+    onComplete: (String?) -> Unit
+) {
     val gson = Gson()
     val mediaType = "application/json".toMediaType()
 
     // Build the original request payload
     val requestModel = RequestModel(
-        stream = false,
+        stream = true,
         model = "gpt-4.1",
         messages = messages,
         features = Features(
@@ -109,21 +112,44 @@ fun completions(messages: List<Message>, apiToken: String, useProxy: Boolean = f
     // Build the request
     val request = Request.Builder()
         .url(url)
-        .post(requestBodyJson.toRequestBody(mediaType))
-        .addHeader("Accept", "application/json")
+        .post((gzip(requestBodyJson.toByteArray())).toRequestBody(mediaType))
+        .addHeader("Accept", "text/event-stream")
         .addHeader("Content-Type", "application/json")
         .addHeader("Authorization", "Bearer $apiToken")
         .addHeader("Cookie", "token=$apiToken")
         .build()
 
-    // Execute request
-    val response = httpClient.newCall(request).execute()
-    val responseBody = response.body.string()
+    val factory = EventSources.createFactory(httpClient)
+    factory.newEventSource(request, object : EventSourceListener() {
+        override fun onEvent(
+            eventSource: EventSource,
+            id: String?,
+            type: String?,
+            data: String
+        ) {
+            if ("[DONE]" == data) {
+//                onComplete(parser.getCompletion())
+                eventSource.cancel()
+            } else {
+                val chunk = Gson().fromJson(data, ChatCompletionChunk::class.java)
+                val content = chunk.choices.firstOrNull()?.delta?.content
+                if (content != null) {
+                    onMessage(content)
+                }
+            }
+        }
 
-    // Parse JSON response
-    val chatResponse = Gson().fromJson(responseBody, ChatResponse::class.java)
-    return chatResponse?.choices?.lastOrNull { it.message.role == "assistant" }?.message
+        override fun onClosed(eventSource: EventSource) {
+//            onComplete(parser.getCompletion())
+        }
+
+        override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+            onComplete(null)
+            logger.warn("SSE Failure: ", t)
+        }
+    })
 }
+
 
 fun login(email: String, password: String, useProxy: Boolean = false): String? {
     val gson = Gson()
@@ -168,7 +194,6 @@ fun login(email: String, password: String, useProxy: Boolean = false): String? {
         null
     }
 }
-
 
 fun auth(token: String, useProxy: Boolean = false): Boolean {
     val gson = Gson()
@@ -216,4 +241,11 @@ fun auth(token: String, useProxy: Boolean = false): Boolean {
         e.printStackTrace()
         false
     }
+}
+
+
+fun gzip(data: ByteArray): ByteArray {
+    val bos = ByteArrayOutputStream()
+    GZIPOutputStream(bos).use { it.write(data) }
+    return bos.toByteArray()
 }
