@@ -24,6 +24,8 @@ private val httpClient: OkHttpClient by lazy {
         .writeTimeout(10, TimeUnit.MINUTES)
         .build()
 }
+val GPT_MODEL = "chatgpt-4o-latest"
+//const val GPT_MODEL = "gpt-4.1"
 private val logger = Logger.getInstance("GitCommitMessagePlugin")
 
 fun generateCommitMessageWithContext(
@@ -34,7 +36,8 @@ fun generateCommitMessageWithContext(
     useProxy: Boolean = false,
     retry: Int = 10,
     onMessage: (String) -> Unit,
-    onComplete: (String?) -> Unit
+    onComplete: (String?) -> Unit,
+    onFailure: (String) -> Unit
 ) {
     val messages = arrayListOf(
         """
@@ -51,11 +54,12 @@ fun generateCommitMessageWithContext(
 
         📄 File: $filename
     """.trimIndent(), "Before:\n\n\n\n$beforeCode".trimIndent(), "After:\n\n\n\n$afterCode".trimIndent()
-    ).map { Message("user", it) }
+    ).map { Message("user", it.trim()) }
 
     completions(
         messages = messages, apiToken, useProxy,
         onMessage = onMessage,
+        onFailure = onFailure,
         onComplete = { assistantResponse ->
 
         }
@@ -68,7 +72,8 @@ fun completions(
     apiToken: String,
     useProxy: Boolean = false,
     onMessage: (String) -> Unit,
-    onComplete: (String?) -> Unit
+    onComplete: (String?) -> Unit,
+    onFailure: (String) -> Unit
 ) {
     val gson = Gson()
     val mediaType = "application/json".toMediaType()
@@ -76,7 +81,7 @@ fun completions(
     // Build the original request payload
     val requestModel = RequestModel(
         stream = true,
-        model = "gpt-4.1",
+        model = GPT_MODEL,
         messages = messages,
         features = Features(
             imageGeneration = false,
@@ -84,9 +89,9 @@ fun completions(
             webSearch = false
         ),
         modelItem = ModelItem(
-            id = "gpt-4.1",
+            id = GPT_MODEL,
             `object` = "model",
-            name = "gpt-4.1",
+            name = GPT_MODEL,
             urlIdx = 0
         )
     )
@@ -112,7 +117,7 @@ fun completions(
     // Build the request
     val request = Request.Builder()
         .url(url)
-        .post((gzip(requestBodyJson.toByteArray())).toRequestBody(mediaType))
+        .post(requestBodyJson.toByteArray().toRequestBody(mediaType))
         .addHeader("Accept", "text/event-stream")
         .addHeader("Content-Type", "application/json")
         .addHeader("Authorization", "Bearer $apiToken")
@@ -127,6 +132,7 @@ fun completions(
             type: String?,
             data: String
         ) {
+            logger.debug(data)
             if ("[DONE]" == data) {
 //                onComplete(parser.getCompletion())
                 eventSource.cancel()
@@ -146,6 +152,14 @@ fun completions(
         override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
             onComplete(null)
             logger.warn("SSE Failure: ", t)
+            val body = response?.body?.string()
+            val error = try {
+                Gson().fromJson(body, ErrorResponse::class.java)?.detail
+            } catch (e: Exception) {
+                logger.warn("Failed to read error response body", e)
+                null
+            }
+            onFailure("Completions SSE Failure: " + (error ?: body ?: ""))
         }
     })
 }
