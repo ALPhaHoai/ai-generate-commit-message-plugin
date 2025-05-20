@@ -39,19 +39,16 @@ fun generateCommitMessageWithContext(
 ) {
     val messages = arrayListOf(
         """
-        I have updated part of my code. Below are the details of the change, including the original code (before) and the updated code (after). Please generate a Git commit message that:
+        I have updated part of my code. Below are the details of the change, including the original code (before) and the updated code (after).
+        Please generate a Git commit message that:
         
         - Follows the Conventional Commits format (type(scope): message)
         - Uses imperative mood ("add", "fix", "refactor", not "added" or "fixed")
         - Is clear and concise, summarizing what changed and (if possible) why
         - Includes a short commit message (72 characters or fewer)
         - (Optional) Suggests an extended description, if the change is complex
-        - No need descriptions
-
-
-
-        📄 File: $filename
-    """.trimIndent(), "Before:\n\n\n\n$beforeCode".trimIndent(), "After:\n\n\n\n$afterCode".trimIndent()
+        - Do not include any general descriptions of the commit format or instructions.
+    """, "File: $filename", "Before:\n\n\n\n$beforeCode", "After:\n\n\n\n$afterCode"
     ).map { Message("user", it.trim()) }
 
     completions(
