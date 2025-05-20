@@ -140,3 +140,5 @@ data class RemoteApiResponse(
     val response: String?,
     val error: String?
 )
+
+data class ErrorResponse(val detail: String)

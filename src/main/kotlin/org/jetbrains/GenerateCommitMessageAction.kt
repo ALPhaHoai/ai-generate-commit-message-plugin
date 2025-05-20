@@ -27,6 +27,7 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         }
 
         commitPanel.setCommitMessage("")
+        var errorShow = false
 
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Generating Commit Message", false) {
             override fun run(indicator: ProgressIndicator) {
@@ -69,7 +70,6 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
                                 commitPanel.setCommitMessage(commitMessage.toString())
                             }
                         },
-                        // WHEN STREAMING IS DONE
                         onComplete = { finalResult: String? ->
 //                            if (!finalResult.isNullOrBlank()) {
 //                                if (commitMessage.isNotEmpty()) {
@@ -80,17 +80,14 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
 //                                    commitPanel.setCommitMessage(commitMessage.toString())
 //                                }
 //                            }
+                        },
+                        onFailure = { error: String ->
+                            if (!errorShow) {
+                                errorShow = true
+                                showErrorDialog(project, error)
+                            }
                         }
                     )
-
-
-
-
-                }
-
-                if (commitMessage.isEmpty()) {
-                    showErrorDialog(project, "No changes found.")
-                    return
                 }
             }
         })
