@@ -1,12 +1,18 @@
 package org.jetbrains
 
+import com.intellij.icons.*
+import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.observable.properties.PropertyGraph
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.wm.ToolWindow
-import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.wm.*
+import com.intellij.ui.*
 import com.intellij.ui.content.ContentFactory
-import com.intellij.ui.dsl.builder.bindItem
-import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.dsl.builder.*
+import javax.swing.Icon
+import javax.swing.JLabel
+
+data class FilePreview(val name: String, val icon: Icon?)
 
 class MyToolWindowFactory : ToolWindowFactory {
     private val models = listOf(
@@ -22,13 +28,24 @@ class MyToolWindowFactory : ToolWindowFactory {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val settings = PluginSettingsService.getInstance()
         val propertyGraph = PropertyGraph()
-        val defaultModel = settings.state.selectedModel?.takeIf { it in models } ?: "GPT-4.1"
+        val defaultModel = settings.state.selectedModel.takeIf { it in models } ?: "gpt-4.1"
         val selectedModelProperty = propertyGraph.property(defaultModel)
+
+        val fileNameProperty = propertyGraph.property("No file selected")
+        val fileIconProperty = propertyGraph.property(AllIcons.General.Warning)
+
+        // Listen for editor tab changes
+        setupFileChangeListener(project) { filePreview ->
+            fileNameProperty.set(filePreview.name)
+            fileIconProperty.set(filePreview.icon ?: AllIcons.General.Warning)
+        }
 
         // Persist selection
         selectedModelProperty.afterChange {
             settings.state.selectedModel = it
         }
+
+        val iconLabel = JLabel(fileIconProperty.get())
 
         val contentPanel = panel {
             row {}.resizableRow()
@@ -52,9 +69,41 @@ class MyToolWindowFactory : ToolWindowFactory {
                     comboBox(models).bindItem(selectedModelProperty)
                 }
             }
+
+            panel {
+                group("File Info") {
+                    row {
+                        cell(iconLabel)
+                        label(fileNameProperty.get())
+                            .bindText(fileNameProperty)
+                    }
+                }
+            }
+        }
+
+        fileIconProperty.afterChange {
+            iconLabel.icon = fileIconProperty.get()
         }
 
         val content = ContentFactory.getInstance().createContent(contentPanel, "", false)
         toolWindow.contentManager.addContent(content)
     }
+}
+
+fun setupFileChangeListener(project: Project, onChange: (FilePreview) -> Unit) {
+    val connection = project.messageBus.connect()
+    connection.subscribe(
+        FileEditorManagerListener.FILE_EDITOR_MANAGER,
+        object : FileEditorManagerListener {
+            override fun selectionChanged(event: com.intellij.openapi.fileEditor.FileEditorManagerEvent) {
+                val file: VirtualFile? = event.newFile
+                onChange(
+                    if (file != null)
+                        FilePreview(file.name, file.fileType.icon)
+                    else
+                        FilePreview("No file selected", AllIcons.General.Warning)
+                )
+            }
+        }
+    )
 }
