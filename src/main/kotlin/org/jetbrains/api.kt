@@ -24,8 +24,6 @@ private val httpClient: OkHttpClient by lazy {
         .writeTimeout(10, TimeUnit.MINUTES)
         .build()
 }
-val GPT_MODEL = "chatgpt-4o-latest"
-//const val GPT_MODEL = "gpt-4.1"
 private val logger = Logger.getInstance("GitCommitMessagePlugin")
 
 fun generateCommitMessageWithContext(
@@ -77,11 +75,12 @@ fun completions(
 ) {
     val gson = Gson()
     val mediaType = "application/json".toMediaType()
+    val model = PluginSettingsService.getInstance().state.selectedModel
 
     // Build the original request payload
     val requestModel = RequestModel(
         stream = true,
-        model = GPT_MODEL,
+        model = model,
         messages = messages,
         features = Features(
             imageGeneration = false,
@@ -89,9 +88,9 @@ fun completions(
             webSearch = false
         ),
         modelItem = ModelItem(
-            id = GPT_MODEL,
+            id = model,
             `object` = "model",
-            name = GPT_MODEL,
+            name = model,
             urlIdx = 0
         )
     )

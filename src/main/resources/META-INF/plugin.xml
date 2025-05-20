@@ -9,6 +9,11 @@
     <!-- Register ProjectActivity implemented in Kotlin -->
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="org.jetbrains.MyProjectActivity"/>
+        <toolWindow
+                id="AI Generate Commit Message"
+                anchor="right"
+                factoryClass="org.jetbrains.MyToolWindowFactory"
+                icon="icons/auto_generate_commit.svg"/>
     </extensions>
 
     <actions>
