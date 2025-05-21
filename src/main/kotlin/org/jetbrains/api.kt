@@ -35,40 +35,40 @@ fun generateCommitMessageWithContext(
     onComplete: (String?) -> Unit,
     onFailure: (String) -> Unit
 ) {
-    val messages = arrayListOf(
+    try {
+        val messages = arrayListOf(
+            """
+            I have updated part of my code (${files} files).
+            Below are the details of the change, including the original code (before) and the updated code (after).
+            Please generate a Git commit message that:
+            
+            - Follows the Conventional Commits format (type(scope): message)
+            - Uses imperative mood ("add", "fix", "refactor", not "added" or "fixed")
+            - Is clear and concise, summarizing what changed and (if possible) why
+            - Includes a short commit message (72 characters or fewer)
+            - Do not include any general descriptions or extended description of the commit format or instructions.
         """
-        I have updated part of my code (${files} files).
-        Below are the details of the change, including the original code (before) and the updated code (after).
-        Please generate a Git commit message that:
-        
-        - Follows the Conventional Commits format (type(scope): message)
-        - Uses imperative mood ("add", "fix", "refactor", not "added" or "fixed")
-        - Is clear and concise, summarizing what changed and (if possible) why
-        - Includes a short commit message (72 characters or fewer)
-        - Do not include any general descriptions or extended description of the commit format or instructions.
-    """
-    )
+        )
 
-    files.forEach { file ->
-        val path = file.virtualFile?.canonicalPath
-        val before = file.beforeRevision?.content
-        val after = file.afterRevision?.content
+        files.forEach { file ->
+            val path = file.virtualFile?.canonicalPath ?: return@forEach
+            val before = file.beforeRevision?.content ?: return@forEach
+            val after = file.afterRevision?.content ?: return@forEach
 
-        if (before == null || after == null || path == null) {
-            return
+            val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
+            messages.add("File $path before change (original code):\\n\\n\\n\\n$trimmedBefore")
+            messages.add("File $path after change (updated code):\\n\\n\\n\\n$trimmedAfter")
         }
 
-        val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
-        messages.add("File $path before change (original code):\\n\\n\\n\\n$trimmedBefore")
-        messages.add("File $path after change (updated code):\\n\\n\\n\\n$trimmedAfter")
+        completions(
+            messages = messages.map { Message("user", it.trim()) }, apiToken, useProxy,
+            onMessage = onMessage,
+            onFailure = onFailure,
+            onComplete = onComplete
+        )
+    } catch (e: Exception) {
+        onFailure(e.message ?: "An error occurred while attempting to generate the commit message")
     }
-
-    completions(
-        messages = messages.map { Message("user", it.trim()) }, apiToken, useProxy,
-        onMessage = onMessage,
-        onFailure = onFailure,
-        onComplete = onComplete
-    )
 
 }
 
