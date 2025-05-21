@@ -37,33 +37,15 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
                 indicator.isIndeterminate = true
                 indicator.text = "Analyzing code changes and generating message..."
 
-                val selectedChanges = getIncludedCheckedChangesFromCommit(project) ?: return
-
+                val selectedChanges = getIncludedCheckedChangesFromCommit(project)
                 val commitMessage = StringBuilder()
+                val changes = selectedChanges.filterNot { it.shouldIgnoreFile() }
 
-                val changes = selectedChanges
-                    .filterNot { it.shouldIgnoreFile() }
-
-                indicator.text = "Found ${changes.size} file(s) to process..."
-
-                for ((index, file) in changes.withIndex()) {
-                    val path = file.virtualFile?.canonicalPath
-                    indicator.text =
-                        "Processing file ${index + 1} of ${changes.size}: ${file.virtualFile?.name ?: "Unknown"}"
-
-                    val before = file.beforeRevision?.content
-                    val after = file.afterRevision?.content
-
-                    if (before == null || after == null || path == null) {
-                        continue
-                    }
-
-                    val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
-
+                if(changes.isNotEmpty()){
+                    indicator.text = "Processing ${changes.size} file(s)..."
+                    val latch = java.util.concurrent.CountDownLatch(1)
                     generateCommitMessageWithContext(
-                        beforeCode = trimmedBefore,
-                        afterCode = trimmedAfter,
-                        filename = path,
+                        files = changes,
                         apiToken = PluginSettingsService.getInstance().state.apiToken ?: "",
                         useProxy = !PluginSettingsService.getInstance().state.useLocalModel,
                         // WHENEVER DATA ARRIVES
@@ -74,23 +56,19 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
                             }
                         },
                         onComplete = { finalResult: String? ->
-//                            if (!finalResult.isNullOrBlank()) {
-//                                if (commitMessage.isNotEmpty()) {
-//                                    commitMessage.append("\n\n")
-//                                }
-//                                commitMessage.append("$path:\n$finalResult")
-//                                ApplicationManager.getApplication().invokeLater {
-//                                    commitPanel.setCommitMessage(commitMessage.toString())
-//                                }
-//                            }
+                            latch.countDown()
                         },
                         onFailure = { error: String ->
                             if (!errorShow) {
                                 errorShow = true
                                 showErrorDialog(project, error)
                             }
+                            latch.countDown()
                         }
                     )
+                    latch.await()
+                } else {
+                    showErrorDialog(project, "No changes found.")
                 }
             }
         })
@@ -107,56 +85,6 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         }
     }
 
-    private fun trimDiffPair(before: String, after: String): Pair<String, String> {
-        val beforeChunks = splitIntoChunks(before.replace("\n\n", "\n"), 100).toMutableList()
-        val afterChunks = splitIntoChunks(after.replace("\n\n", "\n"), 100).toMutableList()
-
-        fun removeBlank() {
-            // Remove leading blank lines
-            while (beforeChunks.firstOrNull()?.isBlank() == true) {
-                beforeChunks.removeFirst()
-            }
-            while (afterChunks.firstOrNull()?.isBlank() == true) {
-                afterChunks.removeFirst()
-            }
-
-            // Remove trailing blank lines
-            while (beforeChunks.lastOrNull()?.isBlank() == true) {
-                beforeChunks.removeLast()
-            }
-            while (afterChunks.lastOrNull()?.isBlank() == true) {
-                afterChunks.removeLast()
-            }
-        }
-
-        removeBlank()
-
-        // Remove common leading lines
-        while (
-            beforeChunks.isNotEmpty() &&
-            afterChunks.isNotEmpty() &&
-            beforeChunks.first().trim() == afterChunks.first().trim()
-        ) {
-            beforeChunks.removeFirst()
-            afterChunks.removeFirst()
-
-            removeBlank()
-        }
-
-        // Remove common trailing lines
-        while (
-            beforeChunks.isNotEmpty() &&
-            afterChunks.isNotEmpty() &&
-            beforeChunks.last().trim() == afterChunks.last().trim()
-        ) {
-            beforeChunks.removeLast()
-            afterChunks.removeLast()
-
-            removeBlank()
-        }
-
-        return beforeChunks.joinToString("\n") to afterChunks.joinToString("\n")
-    }
 
 
 }

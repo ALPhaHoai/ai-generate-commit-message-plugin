@@ -91,3 +91,54 @@ fun Change.shouldIgnoreFile(): Boolean {
     val name = this.virtualFile?.name ?: return false
     return listOf(".map", ".json").any { name.endsWith(it) }
 }
+
+public fun trimDiffPair(before: String, after: String): Pair<String, String> {
+    val beforeChunks = splitIntoChunks(before.replace("\n\n", "\n"), 100).toMutableList()
+    val afterChunks = splitIntoChunks(after.replace("\n\n", "\n"), 100).toMutableList()
+
+    fun removeBlank() {
+        // Remove leading blank lines
+        while (beforeChunks.firstOrNull()?.isBlank() == true) {
+            beforeChunks.removeFirst()
+        }
+        while (afterChunks.firstOrNull()?.isBlank() == true) {
+            afterChunks.removeFirst()
+        }
+
+        // Remove trailing blank lines
+        while (beforeChunks.lastOrNull()?.isBlank() == true) {
+            beforeChunks.removeLast()
+        }
+        while (afterChunks.lastOrNull()?.isBlank() == true) {
+            afterChunks.removeLast()
+        }
+    }
+
+    removeBlank()
+
+    // Remove common leading lines
+    while (
+        beforeChunks.isNotEmpty() &&
+        afterChunks.isNotEmpty() &&
+        beforeChunks.first().trim() == afterChunks.first().trim()
+    ) {
+        beforeChunks.removeFirst()
+        afterChunks.removeFirst()
+
+        removeBlank()
+    }
+
+    // Remove common trailing lines
+    while (
+        beforeChunks.isNotEmpty() &&
+        afterChunks.isNotEmpty() &&
+        beforeChunks.last().trim() == afterChunks.last().trim()
+    ) {
+        beforeChunks.removeLast()
+        afterChunks.removeLast()
+
+        removeBlank()
+    }
+
+    return beforeChunks.joinToString("\n") to afterChunks.joinToString("\n")
+}

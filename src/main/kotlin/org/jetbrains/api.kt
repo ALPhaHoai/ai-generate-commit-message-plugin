@@ -2,6 +2,7 @@ package org.jetbrains
 
 import com.google.gson.Gson
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.vcs.changes.Change
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -27,37 +28,46 @@ private val httpClient: OkHttpClient by lazy {
 private val logger = Logger.getInstance("GitCommitMessagePlugin")
 
 fun generateCommitMessageWithContext(
-    beforeCode: String,
-    afterCode: String,
-    filename: String,
+    files: List<Change>,
     apiToken: String,
     useProxy: Boolean = false,
-    retry: Int = 10,
     onMessage: (String) -> Unit,
     onComplete: (String?) -> Unit,
     onFailure: (String) -> Unit
 ) {
     val messages = arrayListOf(
         """
-        I have updated part of my code. Below are the details of the change, including the original code (before) and the updated code (after).
+        I have updated part of my code (${files} files).
+        Below are the details of the change, including the original code (before) and the updated code (after).
         Please generate a Git commit message that:
         
         - Follows the Conventional Commits format (type(scope): message)
         - Uses imperative mood ("add", "fix", "refactor", not "added" or "fixed")
         - Is clear and concise, summarizing what changed and (if possible) why
         - Includes a short commit message (72 characters or fewer)
-        - (Optional) Suggests an extended description, if the change is complex
-        - Do not include any general descriptions of the commit format or instructions.
-    """, "File: $filename", "Before:\n\n\n\n$beforeCode", "After:\n\n\n\n$afterCode"
-    ).map { Message("user", it.trim()) }
+        - Do not include any general descriptions or extended description of the commit format or instructions.
+    """
+    )
+
+    files.forEach { file ->
+        val path = file.virtualFile?.canonicalPath
+        val before = file.beforeRevision?.content
+        val after = file.afterRevision?.content
+
+        if (before == null || after == null || path == null) {
+            return
+        }
+
+        val (trimmedBefore, trimmedAfter) = trimDiffPair(before, after)
+        messages.add("File $path before change (original code):\\n\\n\\n\\n$trimmedBefore")
+        messages.add("File $path after change (updated code):\\n\\n\\n\\n$trimmedAfter")
+    }
 
     completions(
-        messages = messages, apiToken, useProxy,
+        messages = messages.map { Message("user", it.trim()) }, apiToken, useProxy,
         onMessage = onMessage,
         onFailure = onFailure,
-        onComplete = { assistantResponse ->
-
-        }
+        onComplete = onComplete
     )
 
 }
@@ -128,10 +138,8 @@ fun completions(
             type: String?,
             data: String
         ) {
-            logger.debug(data)
             if ("[DONE]" == data) {
-//                onComplete(parser.getCompletion())
-                eventSource.cancel()
+//                eventSource.cancel()
             } else {
                 val chunk = Gson().fromJson(data, ChatCompletionChunk::class.java)
                 val content = chunk.choices.firstOrNull()?.delta?.content
@@ -142,11 +150,10 @@ fun completions(
         }
 
         override fun onClosed(eventSource: EventSource) {
-//            onComplete(parser.getCompletion())
+            onComplete(null)
         }
 
         override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-            onComplete(null)
             logger.warn("SSE Failure: ", t)
             val body = response?.body?.string()
             val error = try {
