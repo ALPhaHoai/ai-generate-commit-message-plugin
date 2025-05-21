@@ -9,9 +9,12 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.vcs.CommitMessageI
+import com.intellij.openapi.vcs.CheckinProjectPanel
 import com.intellij.openapi.vcs.VcsDataKeys
 import com.intellij.openapi.vcs.ui.Refreshable
+import com.intellij.ui.EditorTextField
+import javax.swing.JComponent
+import javax.swing.text.JTextComponent
 
 private val logger = Logger.getInstance("GitCommitMessagePlugin")
 
@@ -20,13 +23,13 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
 
-        val commitPanel = getCommitPanel(event)
+        val commitPanel = event.getCommitPanel()
         if (commitPanel == null) {
             showErrorDialog(project, "No commit message document found.")
             return
         }
 
-        commitPanel.setCommitMessage("")
+        commitPanel.commitMessage = ""
         var errorShow = false
 
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Generating Commit Message", false) {
@@ -67,7 +70,7 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
                         onMessage = { chunk: String ->
                             commitMessage.append(chunk)
                             ApplicationManager.getApplication().invokeLater {
-                                commitPanel.setCommitMessage(commitMessage.toString())
+                                commitPanel.appendCommitMessage(chunk)
                             }
                         },
                         onComplete = { finalResult: String? ->
@@ -101,14 +104,6 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
                 "Error",
                 Messages.getErrorIcon()
             )
-        }
-    }
-
-    private fun getCommitPanel(event: AnActionEvent?): CommitMessageI? {
-        val data = event?.let { Refreshable.PANEL_KEY.getData(it.dataContext) }
-        return when {
-            data is CommitMessageI -> data
-            else -> event?.let { VcsDataKeys.COMMIT_MESSAGE_CONTROL.getData(it.dataContext) }
         }
     }
 
@@ -170,3 +165,69 @@ fun splitIntoChunks(text: String, chunkSize: Int = 50): List<String> {
     return text.lines().chunked(chunkSize).map { it.joinToString("\n") }
 }
 
+/** Helper: recursively search for first EditorTextField or JTextComponent */
+fun findEditorTextField(comp: JComponent): Any? {
+    if (comp is EditorTextField) return comp
+    if (comp is JTextComponent) return comp
+    for (child in comp.components) {
+        if (child is JComponent) {
+            val found = findEditorTextField(child)
+            if (found != null) return found
+        }
+    }
+    return null
+}
+
+fun CheckinProjectPanel.appendCommitMessage(appendText: String) {
+    val editorTextField = findEditorTextField(this.component)
+    if (editorTextField is EditorTextField) {
+        val oldText = editorTextField.text ?: ""
+        val newText = oldText + appendText
+
+        // Try to preserve (and restore) selection/caret
+        val editor = editorTextField.editor
+        val caretOffset: Int
+        val selectionStart: Int
+        val selectionEnd: Int
+
+        if (editor != null) {
+            val caretModel = editor.caretModel
+            val selectionModel = editor.selectionModel
+            caretOffset = caretModel.offset
+            selectionStart = selectionModel.selectionStart
+            selectionEnd = selectionModel.selectionEnd
+        } else {
+            caretOffset = -1
+            selectionStart = -1
+            selectionEnd = -1
+        }
+
+        // Set the new text
+        editorTextField.text = newText
+
+        if (editor != null && caretOffset <= oldText.length && selectionStart <= oldText.length && selectionEnd <= oldText.length) {
+            // Restore caret and selection - only valid if they were positioned BEFORE the appended area!
+            editor.caretModel.moveToOffset(caretOffset)
+            if (selectionStart != selectionEnd) {
+                editor.selectionModel.setSelection(selectionStart, selectionEnd)
+            } else {
+                editor.selectionModel.removeSelection()
+            }
+        } else {
+            // Fallback: caret to end, no selection
+            editorTextField.setCaretPosition(newText.length)
+            editorTextField.removeSelection()
+        }
+    } else {
+        // fallback to public API (will select all)
+        this.setCommitMessage(this.commitMessage + appendText)
+    }
+}
+
+fun AnActionEvent.getCommitPanel(): CheckinProjectPanel? {
+    val data = Refreshable.PANEL_KEY.getData(this.dataContext)
+    return when {
+        data is CheckinProjectPanel -> data
+        else -> VcsDataKeys.COMMIT_MESSAGE_CONTROL.getData(this.dataContext) as? CheckinProjectPanel
+    }
+}
