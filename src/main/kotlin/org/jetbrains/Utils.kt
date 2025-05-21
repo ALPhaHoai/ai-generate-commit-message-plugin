@@ -2,6 +2,7 @@ package org.jetbrains
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.changes.Change
+import com.intellij.openapi.vcs.changes.InclusionListener
 import com.intellij.openapi.vcs.changes.ui.ChangesListView
 import com.intellij.openapi.vcs.changes.ui.ChangesTree
 import com.intellij.openapi.vcs.changes.ui.CommitDialogChangesBrowser
@@ -33,6 +34,27 @@ private fun findChangesListView(component: java.awt.Component): ChangesListView?
     }
     return null
 }
+
+fun addChangeListListener(project: Project, onChanged: (changes: List<Change>?) -> Unit) {
+    val commitToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Commit") ?: run {
+        return
+    }
+    val rootComponent = commitToolWindow.component
+    val changesTree = findChangesTree(rootComponent) ?: run {
+        return
+    }
+    val changesListView = findChangesListView(changesTree) ?: run {
+        return
+    }
+    changesListView.inclusionModel.addInclusionListener(object : InclusionListener {
+        override fun inclusionChanged() {
+            val inclusion = changesListView.inclusionModel.getInclusion()
+            val changes = inclusion.filterIsInstance<Change>()
+            onChanged(changes)
+        }
+    })
+}
+
 
 fun getIncludedCheckedChangesFromCommit(project: Project): List<Change> {
     val commitToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Commit") ?: return emptyList()

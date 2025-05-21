@@ -9,6 +9,7 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.vcs.CheckinProjectPanel
 import com.intellij.openapi.vcs.VcsDataKeys
 import com.intellij.openapi.vcs.ui.Refreshable
@@ -19,6 +20,7 @@ import javax.swing.text.JTextComponent
 private val logger = Logger.getInstance("GitCommitMessagePlugin")
 
 class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
+    val disabledIcon = IconLoader.getIcon("/icons/auto_generate_commit_disabled.svg", javaClass)
 
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
@@ -26,6 +28,12 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         val commitPanel = event.getCommitPanel()
         if (commitPanel == null) {
             showErrorDialog(project, "No commit message document found.")
+            return
+        }
+
+        val selectedChanges = commitPanel.selectedChanges
+        if (selectedChanges.isNullOrEmpty()) {
+            showErrorDialog(project, "No changes found.")
             return
         }
 
@@ -41,7 +49,7 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
                 val commitMessage = StringBuilder()
                 val changes = selectedChanges.filterNot { it.shouldIgnoreFile() }
 
-                if(changes.isNotEmpty()){
+                if (changes.isNotEmpty()) {
                     indicator.text = "Processing ${changes.size} file(s)..."
                     val latch = java.util.concurrent.CountDownLatch(1)
                     generateCommitMessageWithContext(
@@ -85,7 +93,15 @@ class GenerateCommitMessageAction : AnAction("Generate Commit Message") {
         }
     }
 
+    override fun update(event: AnActionEvent) {
+        super.update(event)
+        val commitPanel = event.getCommitPanel()
+        val presentation = event.presentation
+        val hasChanges = !(commitPanel?.selectedChanges.isNullOrEmpty())
 
+        presentation.isEnabled = hasChanges
+        presentation.disabledIcon = disabledIcon
+    }
 
 }
 

@@ -3,8 +3,12 @@ package org.jetbrains
 import com.intellij.notification.Notification
 import com.intellij.notification.NotificationType
 import com.intellij.notification.Notifications
+import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
+import com.intellij.openapi.util.IconLoader
+import com.intellij.openapi.vcs.ProjectLevelVcsManager
+import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -85,5 +89,37 @@ class MyProjectActivity : ProjectActivity {
             Notification("GitCommitGenerator", title, content, NotificationType.ERROR),
             project
         )
+    }
+
+    private fun setUpIcon(project: Project) {
+        val activeIcon = IconLoader.getIcon("/icons/auto_generate_commit.svg", javaClass)
+        val disabledIcon = IconLoader.getIcon("/icons/auto_generate_commit_disabled.svg", javaClass)
+
+        val action = ActionManager.getInstance().getAction("com.example.autocommit.Action")
+
+        val vcsManager = ProjectLevelVcsManager.getInstance(project)
+
+        vcsManager.runAfterInitialization {
+            val connection = project.messageBus.connect()
+            var alreadyTriggered = false
+
+            connection.subscribe(
+                ToolWindowManagerListener.TOPIC,
+                object : ToolWindowManagerListener {
+                    override fun toolWindowShown(toolWindow: com.intellij.openapi.wm.ToolWindow) {
+                        if (!alreadyTriggered && toolWindow.id == "Commit") {
+                            alreadyTriggered = true
+                            connection.disconnect()
+                            addChangeListListener(project) { changes ->
+                                println(changes?.size)
+                                val presentation = action.templatePresentation
+                                presentation.icon = if (changes.isNullOrEmpty()) disabledIcon else activeIcon
+                                presentation.isEnabled = changes.isNullOrEmpty()
+                            }
+                        }
+                    }
+                }
+            )
+        }
     }
 }
