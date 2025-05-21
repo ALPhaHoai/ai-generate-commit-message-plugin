@@ -1,0 +1,19 @@
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background circle -->
+    <circle cx="8" cy="8" r="7.5" fill="#fff" stroke="#A0A0A0" stroke-width="1" />
+    <!-- Document icon -->
+    <rect x="5" y="5.25" width="6" height="5.5" rx="1" fill="#fff" stroke="#A0A0A0" stroke-width="0.75"/>
+    <!-- Commit message line -->
+    <rect x="6" y="7" width="4" height="0.75" rx="0.375" fill="#A0A0A0"/>
+    <!-- Sparkle/magic star -->
+    <g>
+        <line x1="10.25" y1="5.75" x2="11.15" y2="4.85" stroke="#D0D0D0" stroke-width="0.6" stroke-linecap="round"/>
+        <line x1="11.15" y1="5.75" x2="10.25" y2="4.85" stroke="#D0D0D0" stroke-width="0.6" stroke-linecap="round"/>
+        <line x1="10.7" y1="4.35" x2="10.7" y2="6.2" stroke="#D0D0D0" stroke-width="0.6" stroke-linecap="round"/>
+        <line x1="9.85" y1="5.3" x2="11.55" y2="5.3" stroke="#D0D0D0" stroke-width="0.6" stroke-linecap="round"/>
+    </g>
+    <!-- Git branch: line and two nodes below document -->
+    <circle cx="6.5" cy="10.75" r="0.5" fill="#A0A0A0" stroke="#fff" stroke-width="0.45"/>
+    <circle cx="9.5" cy="10.75" r="0.5" fill="#A0A0A0" stroke="#fff" stroke-width="0.45"/>
+    <line x1="6.5" y1="10.75" x2="9.5" y2="10.75" stroke="#A0A0A0" stroke-width="0.55"/>
+</svg>
