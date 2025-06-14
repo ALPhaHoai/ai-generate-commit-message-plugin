@@ -1,14 +1,20 @@
 package org.jetbrains
 
 import com.intellij.icons.*
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManagerListener
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.observable.properties.PropertyGraph
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.*
 import com.intellij.ui.*
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.dsl.builder.*
+import java.awt.datatransfer.StringSelection
 import javax.swing.Icon
 import javax.swing.JLabel
 
@@ -76,6 +82,28 @@ class MyToolWindowFactory : ToolWindowFactory {
                         cell(iconLabel)
                         label(fileNameProperty.get())
                             .bindText(fileNameProperty)
+                    }
+                }
+            }
+
+            row {
+                button("List Open Files") {
+                    val openFiles = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFiles
+                    val str = openFiles.joinToString(separator = "\n\n\n\n\n\n\n\n\n") { file ->
+                        arrayListOf(
+                            file.path,
+                            FileDocumentManager.getInstance().getDocument(file)?.text ?: VfsUtilCore.loadText(file)
+                        ).joinToString("\n\n")
+                    }
+
+                    val stringSelection = StringSelection(str)
+                    CopyPasteManager.getInstance().setContents(stringSelection)
+
+                    ApplicationManager.getApplication().invokeLater {
+                        Messages.showInfoMessage(
+                            "Copied to clipboard",
+                            "Open Files"
+                        )
                     }
                 }
             }
