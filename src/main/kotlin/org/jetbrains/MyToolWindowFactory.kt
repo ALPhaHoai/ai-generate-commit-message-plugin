@@ -89,11 +89,11 @@ class MyToolWindowFactory : ToolWindowFactory {
             row {
                 button("List Open Files") {
                     val openFiles = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFiles
-                    val str = openFiles.joinToString(separator = "\n\n\n\n\n\n\n\n\n") { file ->
+                    val str = openFiles.joinToString(separator = "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n") { file ->
                         arrayListOf(
                             file.path,
-                            FileDocumentManager.getInstance().getDocument(file)?.text ?: VfsUtilCore.loadText(file)
-                        ).joinToString("\n\n")
+                            (FileDocumentManager.getInstance().getDocument(file)?.text ?: VfsUtilCore.loadText(file)).trim()
+                        ).joinToString("\n\n\n\n")
                     }
 
                     val stringSelection = StringSelection(str)
