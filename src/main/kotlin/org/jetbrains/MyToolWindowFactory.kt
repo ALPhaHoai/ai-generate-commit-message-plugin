@@ -1,6 +1,9 @@
 package org.jetbrains
 
 import com.intellij.icons.*
+import com.intellij.notification.Notification
+import com.intellij.notification.NotificationType
+import com.intellij.notification.Notifications
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManagerListener
@@ -99,12 +102,10 @@ class MyToolWindowFactory : ToolWindowFactory {
                     val stringSelection = StringSelection(str)
                     CopyPasteManager.getInstance().setContents(stringSelection)
 
-                    ApplicationManager.getApplication().invokeLater {
-                        Messages.showInfoMessage(
-                            "Copied to clipboard",
-                            "Open Files"
-                        )
-                    }
+                    Notifications.Bus.notify(
+                        Notification("GitCommitGenerator", "Open Files", "Copied to clipboard", NotificationType.INFORMATION),
+                        project
+                    )
                 }
             }
         }
