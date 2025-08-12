@@ -71,15 +71,13 @@ class MyProjectActivity : ProjectActivity {
         }
 
         if (!apiToken.isNullOrBlank()) {
-            val models = withContext(Dispatchers.IO) {
+            withContext(Dispatchers.IO) {
                 getModels(apiToken!!, !isLocal)
-            }
-            if (!models.isNullOrEmpty()) {
-                settings.state.models = models
-                project.messageBus.syncPublisher(MODELS_CHANGED_TOPIC).modelsChanged(models)
-                notifyInfo(project, "Models Loaded", "${models.size} models available")
-            } else {
-                notifyError(project, "Models Error", "No models could be loaded.")
+            }?.let { models ->
+                if (models != settings.state.models) {
+                    settings.state.models = models
+                    project.messageBus.syncPublisher(MODELS_CHANGED_TOPIC).modelsChanged(models)
+                }
             }
         }
     }
