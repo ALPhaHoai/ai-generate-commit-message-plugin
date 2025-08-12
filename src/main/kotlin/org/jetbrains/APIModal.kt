@@ -148,25 +148,25 @@ data class ModelsResponse(
 )
 
 data class ModelInfo(
-    val id: String,
-    val name: String,
-    val owned_by: String?,
-    val created: Long?,
-    val info: ModelDetail?
+    val id: String = "",
+    val name: String = "",
+    val owned_by: String? = null,
+    val created: Long? = null,
+    val info: ModelDetail? = null
 )
 
 data class ModelDetail(
-    val id: String,
-    val name: String,
-    val meta: ModelMeta?
+    val id: String = "",
+    val name: String = "",
+    val meta: ModelMeta? = null
 )
 
 data class ModelMeta(
-    val description: String?,
-    val capabilities: Capabilities?
+    val description: String? = null,
+    val capabilities: Capabilities? = null
 )
 
 data class Capabilities(
-    val vision: Boolean?,
-    val citations: Boolean?
+    val vision: Boolean? = null,
+    val citations: Boolean? = null
 )
