@@ -74,10 +74,8 @@ class MyProjectActivity : ProjectActivity {
             withContext(Dispatchers.IO) {
                 getModels(apiToken!!, !isLocal)
             }?.let { models ->
-                if (models != settings.state.models) {
-                    settings.state.models = models
-                    project.messageBus.syncPublisher(MODELS_CHANGED_TOPIC).modelsChanged(models)
-                }
+                settings.state.models = models
+                project.messageBus.syncPublisher(MODELS_CHANGED_TOPIC).modelsChanged(models)
             }
         }
     }
