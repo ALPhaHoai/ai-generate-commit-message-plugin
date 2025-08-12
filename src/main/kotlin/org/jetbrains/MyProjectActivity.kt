@@ -11,6 +11,7 @@ import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URI
@@ -67,6 +68,19 @@ class MyProjectActivity : ProjectActivity {
             }
         } else {
             notifyInfo(project, "Token Verified", "Your API token is valid and active.")
+        }
+
+        if (!apiToken.isNullOrBlank()) {
+            val models = withContext(Dispatchers.IO) {
+                getModels(apiToken!!, !isLocal)
+            }
+            if (!models.isNullOrEmpty()) {
+                settings.state.models = models
+                project.messageBus.syncPublisher(MODELS_CHANGED_TOPIC).modelsChanged(models)
+                notifyInfo(project, "Models Loaded", "${models.size} models available")
+            } else {
+                notifyError(project, "Models Error", "No models could be loaded.")
+            }
         }
     }
 

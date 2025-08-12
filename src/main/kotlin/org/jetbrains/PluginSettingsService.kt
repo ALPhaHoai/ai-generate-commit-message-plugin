@@ -25,5 +25,6 @@ class PluginSettingsService : PersistentStateComponent<MyPluginState> {
 data class MyPluginState(
     var useLocalModel: Boolean = false,
     var apiToken: String? = null,
-    var selectedModel: String = "gpt-4.1"
+    var selectedModel: String = "gpt-5",
+    var models: List<ModelInfo> = emptyList()
 )

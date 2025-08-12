@@ -18,27 +18,35 @@ import com.intellij.ui.*
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.dsl.builder.*
 import java.awt.datatransfer.StringSelection
+import javax.swing.DefaultComboBoxModel
 import javax.swing.Icon
 import javax.swing.JLabel
+import com.intellij.openapi.diagnostic.Logger
 
 data class FilePreview(val name: String, val icon: Icon?)
 
 class MyToolWindowFactory : ToolWindowFactory {
-    private val models = listOf(
-        "deepseek-r1:7b",
-        "o3-mini",
-        "chatgpt-4o-latest",
-        "deepseek-r1:1.5b",
-        "gpt-4.1",
-        "gpt-4.1-mini",
-        "gpt-4.1-nano"
-    )
+
+    private val logger = Logger.getInstance(MyToolWindowFactory::class.java)
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val settings = PluginSettingsService.getInstance()
         val propertyGraph = PropertyGraph()
-        val defaultModel = settings.state.selectedModel.takeIf { it in models } ?: "gpt-4.1"
-        val selectedModelProperty = propertyGraph.property(defaultModel)
+
+        val modelsProperty = propertyGraph.property(settings.state.models.map { it.id })
+
+        project.messageBus.connect().subscribe(
+            MODELS_CHANGED_TOPIC,
+            object : PluginSettingsListener {
+                override fun modelsChanged(newModels: List<ModelInfo>) {
+                    if (newModels.isNotEmpty()) {
+                        modelsProperty.set(newModels.map { it.id })
+                    }
+                }
+            }
+        )
+
+        val selectedModelProperty = propertyGraph.property(settings.state.selectedModel)
 
         val fileNameProperty = propertyGraph.property("No file selected")
         val fileIconProperty = propertyGraph.property(AllIcons.General.Warning)
@@ -50,8 +58,10 @@ class MyToolWindowFactory : ToolWindowFactory {
         }
 
         // Persist selection
-        selectedModelProperty.afterChange {
-            settings.state.selectedModel = it
+        selectedModelProperty.afterChange { newValue ->
+            val oldValue = settings.state.selectedModel
+            logger.info("🔍 selectedModel changed from '$oldValue' to '$newValue'",Exception("Change stack trace"))
+            settings.state.selectedModel = newValue
         }
 
         val iconLabel = JLabel(fileIconProperty.get())
@@ -75,7 +85,31 @@ class MyToolWindowFactory : ToolWindowFactory {
             row {}
             group("Model") {
                 row {
-                    comboBox(models).bindItem(selectedModelProperty)
+                    val combo = comboBox(modelsProperty.get()).bindItem(selectedModelProperty)
+
+                    // React to property changes and update comboBox model dynamically
+                    modelsProperty.afterChange { newList ->
+                        val comboBox = combo.component
+                        val model = comboBox.model as DefaultComboBoxModel<String>
+
+                        // Save current selection to restore later
+                        val currentSelection = selectedModelProperty.get()
+
+                        // Temporarily remove ItemListener to avoid firing change
+                        val listeners = comboBox.itemListeners.toList()
+                        listeners.forEach { comboBox.removeItemListener(it) }
+
+                        model.removeAllElements()
+                        newList.forEach { model.addElement(it) }
+
+                        // Restore selection if still valid
+                        if (currentSelection != null && newList.contains(currentSelection)) {
+                            comboBox.selectedItem = currentSelection
+                        }
+
+                        // Reattach listeners
+                        listeners.forEach { comboBox.addItemListener(it) }
+                    }
                 }
             }
 

@@ -142,3 +142,31 @@ data class RemoteApiResponse(
 )
 
 data class ErrorResponse(val detail: String)
+
+data class ModelsResponse(
+    val data: List<ModelInfo>
+)
+
+data class ModelInfo(
+    val id: String,
+    val name: String,
+    val owned_by: String?,
+    val created: Long?,
+    val info: ModelDetail?
+)
+
+data class ModelDetail(
+    val id: String,
+    val name: String,
+    val meta: ModelMeta?
+)
+
+data class ModelMeta(
+    val description: String?,
+    val capabilities: Capabilities?
+)
+
+data class Capabilities(
+    val vision: Boolean?,
+    val citations: Boolean?
+)

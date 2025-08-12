@@ -260,6 +260,64 @@ fun auth(token: String, useProxy: Boolean = false): Boolean {
     }
 }
 
+fun getModels(
+    apiToken: String,
+    useProxy: Boolean = false
+): List<ModelInfo>? {
+    val gson = Gson()
+    val mediaType = "application/json".toMediaType()
+    val targetUrl = "$API_URL/api/models"
+
+    // Headers for direct request
+    val headers = mapOf(
+        "Accept" to "application/json",
+        "Authorization" to "Bearer $apiToken",
+        "Cookie" to "token=$apiToken"
+    )
+
+    // Building request depending on proxy usage
+    val request = if (useProxy) {
+        val proxyPayload = mapOf(
+            "target_url" to targetUrl,
+            "method" to "GET",
+            "headers" to headers
+        )
+        val proxyBody = gson.toJson(proxyPayload).toRequestBody(mediaType)
+        Request.Builder()
+            .url(REMOTE_API_URL)
+            .post(proxyBody)
+            .addHeader("Content-Type", "application/json")
+            .build()
+    } else {
+        Request.Builder()
+            .url(targetUrl)
+            .get()
+            .apply {
+                headers.forEach { (key, value) -> addHeader(key, value) }
+            }
+            .build()
+    }
+
+    return try {
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                logger.warn("Failed to fetch models: ${response.code} ${response.message}")
+                return null
+            }
+
+            val json = response.body?.string() ?: return null
+            val modelsResponse = gson.fromJson(json, ModelsResponse::class.java)
+
+            val settings = PluginSettingsService.getInstance()
+            settings.state.models = modelsResponse.data
+
+            modelsResponse.data
+        }
+    } catch (e: Exception) {
+        logger.warn("Error fetching models", e)
+        null
+    }
+}
 
 fun gzip(data: ByteArray): ByteArray {
     val bos = ByteArrayOutputStream()
